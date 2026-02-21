@@ -1418,7 +1418,9 @@ export async function sortBy(request, response) {
 
 export async function searchProductController(request, response) {
   try {
-    const { query, page, limit } = request.body;
+    const query = request.body?.query?.trim();
+    const page = Math.max(parseInt(request.body?.page) || 1, 1);
+    const limit = Math.max(parseInt(request.body?.limit) || 20, 1);
 
     if (!query) {
       return response.status(400).json({
@@ -1427,26 +1429,35 @@ export async function searchProductController(request, response) {
         message: "Query is required",
       });
     }
-
-    const products = await ProductModel.find({
+    const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const queryRegex = new RegExp(escapedQuery, "i");
+    const searchFilter = {
       $or: [
-        { name: { $regex: query, $options: "i" } },
-        { brand: { $regex: query, $options: "i" } },
-        { catName: { $regex: query, $options: "i" } },
-        { subCat: { $regex: query, $options: "i" } },
-        { thirdsubCat: { $regex: query, $options: "i" } },
+        { name: queryRegex },
+        { brand: queryRegex },
+        { catName: queryRegex },
+        { subCat: queryRegex },
+        { thirdsubCat: queryRegex },
       ],
-    }).populate("category");
+    };
 
-    const total = await products?.length;
+    const total = await ProductModel.countDocuments(searchFilter);
+    const totalPages = Math.max(Math.ceil(total / limit), 1);
+    const currentPage = Math.min(page, totalPages);
+
+    const products = await ProductModel.find(searchFilter)
+      .populate("category")
+      .sort({ createdAt: -1 })
+      .skip((currentPage - 1) * limit)
+      .limit(limit);
 
     return response.status(200).json({
       error: false,
       success: true,
-      products: products,
-      total: 1,
-      page: parseInt(page),
-      totalPages: 1,
+      products,
+      total,
+      page: currentPage,
+      totalPages,
     });
   } catch (error) {
     return response.status(500).json({
