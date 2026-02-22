@@ -41,6 +41,14 @@ const orderSchema = new mongoose.Schema(
         image: {
           type: String,
         },
+        color: {
+          type: String,
+          default: "",
+        },
+        colorCode: {
+          type: String,
+          default: "",
+        },
         subTotal: {
           type: Number,
         },

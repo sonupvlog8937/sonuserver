@@ -3,7 +3,7 @@ import CartProductModel from "../models/cartProduct.modal.js";
 export const addToCartItemController = async (request, response) => {
     try {
         const userId = request.userId //middleware
-        const { productTitle, image, rating, price, oldPrice, quantity, subTotal, productId, countInStock, discount,size, weight, ram, brand } = request.body
+        const { productTitle, image, rating, price, oldPrice, quantity, subTotal, productId, countInStock, discount,size, weight, ram, brand, color, colorCode } = request.body
 
         if (!productId) {
             return response.status(402).json({
@@ -16,7 +16,11 @@ export const addToCartItemController = async (request, response) => {
 
         const checkItemCart = await CartProductModel.findOne({
             userId: userId,
-            productId: productId
+            productId: productId,
+            size: size || null,
+            weight: weight || null,
+            ram: ram || null,
+            color: color || ""
         })
 
         if (checkItemCart) {
@@ -41,7 +45,9 @@ export const addToCartItemController = async (request, response) => {
             discount:discount,
             size:size,
             weight:weight,
-            ram:ram
+            ram:ram,
+            color:color,
+            colorCode:colorCode
         })
 
         const save = await cartItem.save();
@@ -93,7 +99,7 @@ export const updateCartItemQtyController = async (request, response) => {
     try {
 
         const userId = request.userId
-        const { _id, qty , subTotal, size, weight, ram} = request.body
+        const { _id, qty , subTotal, size, weight, ram, color, colorCode, image } = request.body
 
 
 
@@ -113,7 +119,10 @@ export const updateCartItemQtyController = async (request, response) => {
                 subTotal:subTotal,
                 size:size,
                 ram:ram,
-                weight:weight
+                weight:weight,
+                color:color,
+                colorCode:colorCode,
+                image:image
             },
             { new: true }
         )
