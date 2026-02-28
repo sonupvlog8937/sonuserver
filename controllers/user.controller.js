@@ -379,7 +379,7 @@ export async function userAvatarController(request, response) {
                 options,
                 function (error, result) {
                     imagesArr.push(result.secure_url);
-                    fs.unlinkSync(image[i].path);
+                    fs.unlinkSync(`uploads/${request.files[i].filename}`);
                 }
             );
         }

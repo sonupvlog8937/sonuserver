@@ -34,7 +34,7 @@ export async function uploadImages(request, response) {
         options,
         function (error, result) {
           imagesArr.push(result.secure_url);
-          fs.unlinkSync(image[i].path);
+          fs.unlinkSync(`uploads/${request.files[i].filename}`);
         },
       );
     }
@@ -70,7 +70,7 @@ export async function uploadBannerImages(request, response) {
         options,
         function (error, result) {
           bannerImage.push(result.secure_url);
-          fs.unlinkSync(image[i].path);
+          fs.unlinkSync(`uploads/${request.files[i].filename}`);
         },
       );
     }
