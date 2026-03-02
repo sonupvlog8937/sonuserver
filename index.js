@@ -18,15 +18,22 @@ import bannerList2Router from './route/bannerList2.route.js';
 import blogRouter from './route/blog.route.js';
 import orderRouter from './route/order.route.js';
 import logoRouter from './route/logo.route.js';
+import { requestContext } from './middlewares/requestContext.js';
+import { globalErrorHandler, notFoundHandler } from './middlewares/errorHandler.js';
+import mongoose from 'mongoose';
 
 const app = express();
 app.use(cors());
 app.options('*', cors())
 
+app.use(requestContext)
+
 
 app.use(express.json())
 app.use(cookieParser())
-// app.use(morgan())
+if (process.env.NODE_ENV !== 'production') {
+    app.use(morgan('dev'))
+}
 app.use(helmet({
     crossOriginResourcePolicy: false
 }))
@@ -36,6 +43,23 @@ app.get("/", (request, response) => {
     ///server to client
     response.json({
         message: "Server is running " + process.env.PORT
+    })
+})
+
+app.get('/health', (request, response) => {
+    const dbReadyState = mongoose.connection.readyState
+    const isDatabaseConnected = dbReadyState === 1
+
+    response.status(isDatabaseConnected ? 200 : 503).json({
+        success: isDatabaseConnected,
+        service: 'api',
+        timestamp: new Date().toISOString(),
+        uptimeSeconds: Math.floor(process.uptime()),
+        database: {
+            connected: isDatabaseConnected,
+            state: dbReadyState
+        },
+        requestId: request.id
     })
 })
 
@@ -52,6 +76,9 @@ app.use("/api/bannerList2",bannerList2Router)
 app.use("/api/blog",blogRouter)
 app.use("/api/order",orderRouter)
 app.use("/api/logo",logoRouter)
+
+app.use(notFoundHandler)
+app.use(globalErrorHandler)
 
 
 connectDB().then(() => {
