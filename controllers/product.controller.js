@@ -35,6 +35,35 @@ const normalizeSearchText = (value = "") =>
     .replace(/\s+/g, " ")
     .trim();
 
+   const tokenizeText = (value = "") =>
+  normalizeSearchText(value)
+    .split(" ")
+    .filter(Boolean);
+
+    const SEARCH_STOP_WORDS = new Set([
+  "for",
+  "the",
+  "and",
+  "with",
+  "from",
+  "new",
+  "latest",
+  "best",
+  "buy",
+  "shop",
+  "online",
+]);
+
+const getMeaningfulSearchTokens = (value = "") => {
+  const tokens = tokenizeText(value);
+  const filtered = tokens.filter(
+    (token) => token.length > 1 && !SEARCH_STOP_WORDS.has(token),
+  );
+
+  return filtered.length ? filtered : tokens;
+};
+
+
 const levenshteinDistance = (a = "", b = "") => {
   const first = normalizeSearchText(a);
   const second = normalizeSearchText(b);
@@ -62,6 +91,160 @@ const levenshteinDistance = (a = "", b = "") => {
 
   return matrix[first.length][second.length];
 };
+
+const buildSearchVocabulary = (products = []) => {
+  const vocabulary = new Set();
+
+  products.forEach((item) => {
+    [
+      item?.name,
+      item?.brand,
+      item?.catName,
+      item?.subCat,
+      item?.thirdsubCat,
+      ...(item?.keywords || []),
+    ].forEach((field) => {
+      tokenizeText(field).forEach((token) => {
+        if (token.length > 1) {
+          vocabulary.add(token);
+        }
+      });
+    });
+  });
+
+  return Array.from(vocabulary);
+};
+
+const getSpellCorrectedQuery = (query = "", vocabulary = []) => {
+  const words = tokenizeText(query);
+  if (!words.length || !vocabulary.length) {
+    return null;
+  }
+
+  let isModified = false;
+  const correctedWords = words.map((word) => {
+    if (vocabulary.includes(word)) {
+      return word;
+    }
+
+    let bestMatch = word;
+    let bestDistance = Number.POSITIVE_INFINITY;
+
+    for (const token of vocabulary) {
+      if (Math.abs(token.length - word.length) > 3) continue;
+      const distance = levenshteinDistance(word, token);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestMatch = token;
+      }
+    }
+
+    const maxDistance = word.length > 7 ? 2 : 1;
+    if (bestDistance <= maxDistance && bestMatch !== word) {
+      isModified = true;
+      return bestMatch;
+    }
+
+    return word;
+  });
+
+  if (!isModified) {
+    return null;
+  }
+
+  return correctedWords.join(" ");
+};
+
+const buildSearchIntentPhrases = (query = "") => {
+  const tokens = getMeaningfulSearchTokens(query);
+  if (!tokens.length) return [];
+
+  const phrases = [tokens.join(" ")];
+  if (tokens.length >= 2) {
+    phrases.push(tokens.slice(0, 2).join(" "));
+  }
+
+  return Array.from(new Set(phrases.filter(Boolean)));
+};
+
+const buildAiSearchInsights = (products = [], correctedQuery = "") => {
+  if (!products.length) {
+    return {
+      title: "AI Search Assistant",
+      summary:
+        "Mujhe exact product match nahi mila. Aap brand, category ya short keywords try karein.",
+      highlights: [],
+    };
+  }
+
+  const topProducts = products.slice(0, 3);
+  const priceList = topProducts.map((item) => Number(item?.price) || 0);
+  const minPrice = Math.min(...priceList);
+  const maxPrice = Math.max(...priceList);
+
+  return {
+    title: "AI Search Assistant",
+    summary: correctedQuery
+      ? `Aapke search ke liye "${correctedQuery}" use kiya gaya hai. Yeh top relevant options hain.`
+      : "Yeh products relevance, popularity aur pricing ke hisaab se recommend kiye gaye hain.",
+    highlights: [
+      `Top ${topProducts.length} recommendations curated by relevance score`,
+      `Best visible price range: ₹${minPrice} - ₹${maxPrice}`,
+      topProducts[0]?.brand
+        ? `Leading brand in results: ${topProducts[0].brand}`
+        : "Mixed brand results available",
+    ],
+  };
+};
+
+const buildSearchSuggestions = (products = [], query = "", correctedQuery = "") => {
+  const cleanQuery = normalizeSearchText(query);
+  if (!cleanQuery) return [];
+
+   const collectedSuggestions = [];
+
+  products.slice(0, 40).forEach((item) => {
+     [
+      item?.name,
+      item?.brand,
+      item?.catName,
+      item?.subCat,
+      item?.thirdsubCat,
+      ...(item?.keywords || []),
+    ].forEach((value) => {
+      const normalized = normalizeSearchText(value);
+      if (
+        normalized &&
+        (normalized.includes(cleanQuery) || cleanQuery.includes(normalized))
+      ) {
+        collectedSuggestions.push(normalized);
+      }
+    });
+    normalizeKeywords(item?.keywords).forEach((keyword) => {
+      if (keyword.includes(cleanQuery) || cleanQuery.includes(keyword)) {
+         collectedSuggestions.push(keyword);
+      }
+    });
+  });
+
+  const suggestionSet = new Set([
+    ...(correctedQuery ? [normalizeSearchText(correctedQuery)] : []),
+    ...collectedSuggestions,
+  ]);
+
+  return Array.from(suggestionSet).filter(Boolean).slice(0, 12);
+};
+
+const buildSuggestionProducts = (products = []) => {
+  return products.slice(0, 6).map((item) => ({
+    _id: item?._id,
+    name: item?.name || "",
+    brand: item?.brand || "",
+    description: item?.description || "",
+    image: Array.isArray(item?.images) ? item.images[0] : "",
+  }));
+};
+
 
 cloudinary.config({
   cloud_name: process.env.cloudinary_Config_Cloud_Name,
@@ -1489,21 +1672,61 @@ export async function searchProductController(request, response) {
     }
 
     const cleanQuery = normalizeSearchText(query);
-    const queryParts = cleanQuery.split(" ").filter(Boolean);
+    const queryParts = getMeaningfulSearchTokens(cleanQuery);
+    const intentPhrases = buildSearchIntentPhrases(cleanQuery);
+
+    const fullQueryRegex = new RegExp(cleanQuery, "i");
+    const intentPhraseMatchers = intentPhrases.map((phrase) => {
+      const phraseRegex = new RegExp(phrase, "i");
+      return {
+        $or: [
+          { name: phraseRegex },
+          { brand: phraseRegex },
+          { description: phraseRegex },
+          { keywords: phraseRegex },
+          { catName: phraseRegex },
+          { subCat: phraseRegex },
+          { thirdsubCat: phraseRegex },
+        ],
+      };
+    });
+
+    const termBasedMatcher = queryParts.map((term) => {
+      const termRegex = new RegExp(term, "i");
+      return {
+        $or: [
+          { name: termRegex },
+          { brand: termRegex },
+          { description: termRegex },
+          { keywords: termRegex },
+          { catName: termRegex },
+          { subCat: termRegex },
+          { thirdsubCat: termRegex },
+        ],
+      };
+    });
+
+    
 
     const products = await ProductModel.find({
       $or: [
-        { name: { $regex: query, $options: "i" } },
-        { brand: { $regex: query, $options: "i" } },
-        { description: { $regex: query, $options: "i" } },
-        { keywords: { $in: queryParts.map((item) => new RegExp(item, "i")) } },
-        { catName: { $regex: query, $options: "i" } },
-        { subCat: { $regex: query, $options: "i" } },
-        { thirdsubCat: { $regex: query, $options: "i" } },
+        { name: fullQueryRegex },
+        { brand: fullQueryRegex },
+        { description: fullQueryRegex },
+        { keywords: fullQueryRegex },
+        { catName: fullQueryRegex },
+        { subCat: fullQueryRegex },
+        { thirdsubCat: fullQueryRegex },
+        ...intentPhraseMatchers,
+        ...(termBasedMatcher.length ? [{ $and: termBasedMatcher }] : []),
       ],
     })
       .populate("category")
       .limit(250);
+
+       const vocabulary = buildSearchVocabulary(products);
+    const correctedQuery = getSpellCorrectedQuery(cleanQuery, vocabulary);
+     const correctedTokens = getMeaningfulSearchTokens(correctedQuery || cleanQuery);
 
     let scoredProducts = products
       .map((item) => {
@@ -1521,7 +1744,7 @@ export async function searchProductController(request, response) {
 
         let score = 0;
 
-        for (const term of queryParts) {
+        for (const term of correctedTokens) {
           const hasContainMatch = data.some(
             (field) => field.includes(term) || term.includes(field),
           );
@@ -1546,7 +1769,12 @@ export async function searchProductController(request, response) {
           }
         }
 
-        if (normalizeSearchText(item?.name).includes(cleanQuery)) {
+        if (
+          normalizeSearchText(item?.name).includes(cleanQuery) ||
+          intentPhrases.some((phrase) =>
+            normalizeSearchText(item?.name).includes(phrase),
+          )
+        ) {
           score += 10;
         }
 
@@ -1562,6 +1790,13 @@ export async function searchProductController(request, response) {
       const fuzzyFallback = await ProductModel.find()
         .populate("category")
         .limit(200);
+
+         const fallbackVocabulary = buildSearchVocabulary(fuzzyFallback);
+      const fallbackCorrection =
+        correctedQuery || getSpellCorrectedQuery(cleanQuery, fallbackVocabulary);
+        const fallbackTokens = getMeaningfulSearchTokens(
+        fallbackCorrection || cleanQuery,
+      );
       scoredProducts = fuzzyFallback
         .map((item) => {
           const fields = [item?.name, ...(item?.keywords || []), item?.brand]
@@ -1572,7 +1807,11 @@ export async function searchProductController(request, response) {
             ...fields.map((field) => {
               const words = field.split(" ").filter(Boolean);
               return Math.min(
-                ...words.map((word) => levenshteinDistance(cleanQuery, word)),
+                ...fallbackTokens.map((token) =>
+                  Math.min(
+                    ...words.map((word) => levenshteinDistance(token, word)),
+                  ),
+                ),
               );
             }),
           );
@@ -1582,6 +1821,26 @@ export async function searchProductController(request, response) {
         .filter((item) => item.distance <= 2)
         .sort((a, b) => a.distance - b.distance)
         .map((entry) => entry.item);
+        const total = scoredProducts.length;
+      const start = (requestedPage - 1) * requestedLimit;
+      const paginatedProducts = scoredProducts.slice(
+        start,
+        start + requestedLimit,
+      );
+
+      return response.status(200).json({
+        error: false,
+        success: true,
+        products: paginatedProducts,
+        total,
+        page: requestedPage,
+        totalPages: Math.max(1, Math.ceil(total / requestedLimit)),
+        originalQuery: query,
+        correctedQuery: fallbackCorrection,
+        suggestions: buildSearchSuggestions(scoredProducts, query, fallbackCorrection),
+        suggestionProducts: buildSuggestionProducts(scoredProducts),
+        aiInsights: buildAiSearchInsights(paginatedProducts, fallbackCorrection),
+      });
     }
 
     const total = scoredProducts.length;
@@ -1598,6 +1857,11 @@ export async function searchProductController(request, response) {
       total,
       page: requestedPage,
       totalPages: Math.max(1, Math.ceil(total / requestedLimit)),
+      originalQuery: query,
+      correctedQuery,
+      suggestions: buildSearchSuggestions(scoredProducts, query, correctedQuery),
+      suggestionProducts: buildSuggestionProducts(scoredProducts),
+      aiInsights: buildAiSearchInsights(paginatedProducts, correctedQuery),
     });
   } catch (error) {
     return response.status(500).json({
