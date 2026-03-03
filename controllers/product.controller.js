@@ -329,11 +329,18 @@ export async function uploadBannerImages(request, response) {
 //create product
 export async function createProduct(request, response) {
   try {
+     const requestImages = Array.isArray(request.body.images)
+      ? request.body.images
+      : [];
+    const requestBannerImages = Array.isArray(request.body.bannerimages)
+      ? request.body.bannerimages
+      : [];
+
     let product = new ProductModel({
       name: request.body.name,
       description: request.body.description,
-      images: imagesArr,
-      bannerimages: bannerImage,
+      images: requestImages.length ? requestImages : imagesArr,
+      bannerimages: requestBannerImages.length ? requestBannerImages : bannerImage,
       bannerTitleName: request.body.bannerTitleName,
       isDisplayOnHomeBanner: request.body.isDisplayOnHomeBanner,
       brand: request.body.brand,
@@ -372,6 +379,7 @@ export async function createProduct(request, response) {
     }
 
     imagesArr = [];
+    bannerImage = [];
 
     return response.status(200).json({
       message: "Product Created successfully",
