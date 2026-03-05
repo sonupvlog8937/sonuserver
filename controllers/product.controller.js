@@ -1579,6 +1579,17 @@ export async function filters(request, response) {
     colors,
     page,
     limit,
+    brands,
+    sizes,
+    productTypes,
+    priceRanges,
+    saleOnly,
+    stockStatus,
+    discountRanges,
+    weights,
+    ramOptions,
+    sortType,
+    query,
   } = request.body;
 
   const filters = {};
@@ -1605,11 +1616,98 @@ export async function filters(request, response) {
   if (colors?.length) {
     filters["colorOptions.name"] = { $in: colors };
   }
+   if (brands?.length) {
+    filters.brand = { $in: brands };
+  }
+
+  if (sizes?.length) {
+    filters.size = { $in: sizes };
+  }
+
+  const andConditions = [];
+
+  if (productTypes?.length) {
+    andConditions.push({ $or: [
+      { productType: { $in: productTypes } },
+      { thirdSubCatName: { $in: productTypes } },
+      { subCatName: { $in: productTypes } },
+      { catName: { $in: productTypes } },
+     ]});
+  }
+
+  if (query?.trim()) {
+    const queryRegex = new RegExp(query.trim(), "i");
+    andConditions.push({
+      $or: [
+        { name: queryRegex },
+        { description: queryRegex },
+        { brand: queryRegex },
+        { catName: queryRegex },
+        { subCatName: queryRegex },
+        { thirdSubCatName: queryRegex },
+      ],
+    });
+  }
+
+  if (priceRanges?.length) {
+    const rangeFilters = priceRanges
+      .map((range) => {
+        const [min, max] = String(range).split("-").map(Number);
+        if (Number.isNaN(min) || Number.isNaN(max)) return null;
+        return { price: { $gte: min, $lte: max } };
+      })
+      .filter(Boolean);
+
+    if (rangeFilters.length) {
+    andConditions.push({ $or: rangeFilters });
+    }
+  }
+
+   if (andConditions.length) {
+    filters.$and = [...(filters.$and || []), ...andConditions];
+  }
+
+  if (saleOnly) {
+    filters.discount = { $gt: 0 };
+  }
+
+  if (stockStatus === "inStock") {
+    filters.countInStock = { $gt: 0 };
+  }
+
+  if (stockStatus === "outOfStock") {
+    filters.countInStock = { $lte: 0 };
+  }
+
+  if (discountRanges?.length) {
+    const minDiscount = Math.min(...discountRanges.map(Number).filter(Boolean));
+    if (Number.isFinite(minDiscount)) {
+      filters.discount = { ...(filters.discount || {}), $gte: minDiscount };
+    }
+  }
+
+  if (weights?.length) {
+    filters.productWeight = { $in: weights };
+  }
+
+  if (ramOptions?.length) {
+    filters.productRam = { $in: ramOptions };
+  }
+
+  const sortConfig = {
+    bestSeller: { sale: -1, createdAt: -1, _id: -1 },
+    latest: { createdAt: -1, _id: -1 },
+    popular: { rating: -1, sale: -1, _id: -1 },
+    featured: { isFeatured: -1, sale: -1, _id: -1 },
+  };
   try {
+    const currentPage = Math.max(1, parseInt(page) || 1);
+    const perPage = Math.max(1, parseInt(limit) || 20);
     const products = await ProductModel.find(filters)
       .populate("category")
-      .skip((page - 1) * limit)
-      .limit(parseInt(limit));
+       .sort(sortConfig[sortType] || sortConfig.bestSeller)
+      .skip((currentPage - 1) * perPage)
+      .limit(perPage);
 
     const total = await ProductModel.countDocuments(filters);
 
@@ -1618,8 +1716,8 @@ export async function filters(request, response) {
       success: true,
       products: products,
       total: total,
-      page: parseInt(page),
-      totalPages: Math.ceil(total / limit),
+     page: currentPage,
+      totalPages: Math.max(1, Math.ceil(total / perPage)),
     });
   } catch (error) {
     return response.status(500).json({
@@ -1659,7 +1757,7 @@ export async function sortBy(request, response) {
 
 export async function searchProductController(request, response) {
   try {
-    const { query, page, limit } = request.body;
+    const { query, page, limit, brands, sizes, productTypes, priceRanges, saleOnly, stockStatus, discountRanges, weights, ramOptions, ratingBands, sortType } = request.body;
     const requestedPage = parseInt(page) || 1;
     const requestedLimit = parseInt(limit) || 20;
 
@@ -1670,6 +1768,67 @@ export async function searchProductController(request, response) {
         message: "Query is required",
       });
     }
+    const applyAdvancedFilters = (items = []) => {
+      return items.filter((item) => {
+        if (brands?.length && !brands.includes(item?.brand)) return false;
+        if (sizes?.length && !(item?.size || []).some((size) => sizes.includes(size))) return false;
+
+        if (productTypes?.length) {
+          const itemType = item?.productType || item?.thirdSubCatName || item?.subCatName || item?.catName;
+          if (!productTypes.includes(itemType)) return false;
+        }
+
+        if (priceRanges?.length) {
+          const itemPrice = Number(item?.price || 0);
+          const inRange = priceRanges.some((range) => {
+            const [min, max] = String(range).split("-").map(Number);
+            return !Number.isNaN(min) && !Number.isNaN(max) && itemPrice >= min && itemPrice <= max;
+          });
+          if (!inRange) return false;
+        }
+
+        if (saleOnly && Number(item?.discount || 0) <= 0) return false;
+        if (stockStatus === "inStock" && Number(item?.countInStock || 0) <= 0) return false;
+        if (stockStatus === "outOfStock" && Number(item?.countInStock || 0) > 0) return false;
+
+        if (discountRanges?.length) {
+          const discount = Number(item?.discount || 0);
+          if (!discountRanges.some((min) => discount >= Number(min || 0))) return false;
+        }
+
+        if (weights?.length && !(item?.productWeight || []).some((w) => weights.includes(w))) return false;
+        if (ramOptions?.length && !(item?.productRam || []).some((ram) => ramOptions.includes(ram))) return false;
+
+        if (ratingBands?.length) {
+          const rating = Number(item?.rating || 0);
+          const inBand = ratingBands.some(({ min, max }) => max === null ? rating >= min : rating >= min && rating < max);
+          if (!inBand) return false;
+        }
+
+        return true;
+      });
+    };
+
+    const sortFilteredItems = (items = []) => {
+      return [...items].sort((a, b) => {
+        if (sortType === "latest") {
+          return new Date(b?.createdAt || b?.updatedAt || 0).getTime() - new Date(a?.createdAt || a?.updatedAt || 0).getTime();
+        }
+
+        if (sortType === "popular") {
+          const ratingDiff = Number(b?.rating || 0) - Number(a?.rating || 0);
+          if (ratingDiff !== 0) return ratingDiff;
+          return Number(b?.sale || 0) - Number(a?.sale || 0);
+        }
+
+        if (sortType === "featured") {
+          const featuredDiff = Number(Boolean(b?.isFeatured)) - Number(Boolean(a?.isFeatured));
+          if (featuredDiff !== 0) return featuredDiff;
+        }
+
+        return Number(b?.sale || 0) - Number(a?.sale || 0);
+      });
+    };
 
     const cleanQuery = normalizeSearchText(query);
     const queryParts = getMeaningfulSearchTokens(cleanQuery);
@@ -1821,7 +1980,9 @@ export async function searchProductController(request, response) {
         .filter((item) => item.distance <= 2)
         .sort((a, b) => a.distance - b.distance)
         .map((entry) => entry.item);
-        const total = scoredProducts.length;
+        scoredProducts = sortFilteredItems(applyAdvancedFilters(scoredProducts));
+
+      const total = scoredProducts.length;
       const start = (requestedPage - 1) * requestedLimit;
       const paginatedProducts = scoredProducts.slice(
         start,
@@ -1843,6 +2004,7 @@ export async function searchProductController(request, response) {
       });
     }
 
+    scoredProducts = sortFilteredItems(applyAdvancedFilters(scoredProducts));
     const total = scoredProducts.length;
     const start = (requestedPage - 1) * requestedLimit;
     const paginatedProducts = scoredProducts.slice(
