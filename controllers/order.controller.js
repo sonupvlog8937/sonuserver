@@ -5,50 +5,6 @@ import paypal from "@paypal/checkout-server-sdk";
 import OrderConfirmationEmail from "../utils/orderEmailTemplate.js";
 import sendEmailFun from "../config/sendEmail.js";
 
-const updateProductsInventory = async (products = []) => {
-    if (!Array.isArray(products) || products.length === 0) {
-        return;
-    }
-
-    const operations = products
-        .filter((item) => item?.productId && Number(item?.quantity) > 0)
-        .map((item) => ({
-            updateOne: {
-                filter: { _id: item.productId },
-                update: {
-                    $inc: {
-                        countInStock: -Number(item.quantity),
-                        sale: Number(item.quantity)
-                    }
-                }
-            }
-        }));
-
-    if (operations.length > 0) {
-        await ProductModel.bulkWrite(operations);
-    }
-};
-
-const queueOrderConfirmationEmail = async (userId, order) => {
-    try {
-        const user = await UserModel.findById(userId).select("name email").lean();
-        if (!user?.email) return;
-
-        const sent = await sendEmailFun({
-            sendTo: [user.email],
-            subject: "Order Confirmation",
-            text: "",
-            html: OrderConfirmationEmail(user.name, order)
-        });
-
-        if (!sent) {
-            console.error("Order confirmation email failed to send", { userId, orderId: order?._id });
-        }
-    } catch (error) {
-        console.error("Order confirmation email error", error);
-    }
-};
-
 export const createOrderController = async (request, response) => {
     try {
 
@@ -71,9 +27,33 @@ export const createOrderController = async (request, response) => {
 
         order = await order.save();
 
-        await updateProductsInventory(request.body.products);
+        for (let i = 0; i < request.body.products.length; i++) {
 
-        void queueOrderConfirmationEmail(request.body.userId, order);
+            const product = await ProductModel.findOne({ _id: request.body.products[i].productId })
+            console.log(product)
+
+            await ProductModel.findByIdAndUpdate(
+                request.body.products[i].productId,
+                {
+                    countInStock: parseInt(request.body.products[i].countInStock - request.body.products[i].quantity),
+                    sale: parseInt(product?.sale + request.body.products[i].quantity)
+                },
+                { new: true }
+            );
+        }
+
+        const user = await UserModel.findOne({ _id: request.body.userId })
+
+        const recipients = [];
+        recipients.push(user?.email);
+
+        // Send verification email
+        await sendEmailFun({
+            sendTo: recipients,
+            subject: "Order Confirmation",
+            text: "",
+            html: OrderConfirmationEmail(user?.name, order)
+        })
 
 
         return response.status(200).json({
@@ -250,9 +230,33 @@ export const captureOrderPaypalController = async (request, response) => {
         const order = new OrderModel(orderInfo);
         await order.save();
 
-        await updateProductsInventory(request.body.products);
+        const user = await UserModel.findOne({ _id: request.body.userId })
 
-            void queueOrderConfirmationEmail(request.body.userId, order);
+        const recipients = [];
+        recipients.push(user?.email);
+
+        // Send verification email
+        await sendEmailFun({
+            sendTo: recipients,
+            subject: "Order Confirmation",
+            text: "",
+            html: OrderConfirmationEmail(user?.name, order)
+        })
+
+
+        for (let i = 0; i < request.body.products.length; i++) {
+
+            const product = await ProductModel.findOne({ _id: request.body.products[i].productId })
+
+            await ProductModel.findByIdAndUpdate(
+                request.body.products[i].productId,
+                {
+                    countInStock: parseInt(request.body.products[i].countInStock - request.body.products[i].quantity),
+                    sale: parseInt(product?.sale + request.body.products[i].quantity)
+                },
+                { new: true }
+            );
+        }
 
 
         return response.status(200).json(
