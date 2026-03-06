@@ -23,8 +23,8 @@ import { globalErrorHandler, notFoundHandler } from './middlewares/errorHandler.
 import mongoose from 'mongoose';
 
 const app = express();
-// app.use(cors());
-// app.options('*', cors())
+app.use(cors());
+app.options('*', cors())
 
 app.use(requestContext)
 
@@ -34,14 +34,6 @@ app.use(cookieParser())
 if (process.env.NODE_ENV !== 'production') {
     app.use(morgan('dev'))
 }
-
-app.use(cors({
-  origin: [
-    "http://localhost:5173",
-    "https://your-frontend.vercel.app"
-  ],
-  credentials: true
-}));
 app.use(helmet({
     crossOriginResourcePolicy: false
 }))
