@@ -1701,6 +1701,10 @@ export async function filters(request, response) {
     latest: { createdAt: -1, _id: -1 },
     popular: { rating: -1, sale: -1, _id: -1 },
     featured: { isFeatured: -1, sale: -1, _id: -1 },
+    priceAsc: { price: 1, _id: 1 },
+    priceDesc: { price: -1, _id: -1 },
+    nameAsc: { name: 1, _id: 1 },
+    nameDesc: { name: -1, _id: -1 },
   };
   try {
     const currentPage = Math.max(1, parseInt(page) || 1);
@@ -1713,6 +1717,21 @@ export async function filters(request, response) {
 
     const total = await ProductModel.countDocuments(filters);
 
+    const filterOptionsProducts = await ProductModel.find(filters)
+      .select("brand size productType thirdSubCatName subCatName catName productWeight productRam colorOptions.name")
+      .lean();
+
+    const filterOptions = {
+      brands: [...new Set(filterOptionsProducts.map((item) => item?.brand?.trim()).filter(Boolean))],
+      sizes: [...new Set(filterOptionsProducts.flatMap((item) => item?.size || []).filter(Boolean))],
+      productTypes: [...new Set(filterOptionsProducts
+        .map((item) => item?.productType || item?.thirdSubCatName || item?.subCatName || item?.catName)
+        .filter(Boolean))],
+      weights: [...new Set(filterOptionsProducts.flatMap((item) => item?.productWeight || []).filter(Boolean))],
+      ramOptions: [...new Set(filterOptionsProducts.flatMap((item) => item?.productRam || []).filter(Boolean))],
+      colors: [...new Set(filterOptionsProducts.flatMap((item) => (item?.colorOptions || []).map((colorItem) => colorItem?.name)).filter(Boolean))],
+    };
+
     return response.status(200).json({
       error: false,
       success: true,
@@ -1720,6 +1739,7 @@ export async function filters(request, response) {
       total: total,
       page: currentPage,
       totalPages: Math.max(1, Math.ceil(total / perPage)),
+      filterOptions,
     });
   } catch (error) {
     return response.status(500).json({
@@ -1854,6 +1874,22 @@ export async function searchProductController(request, response) {
 
     const sortFilteredItems = (items = []) => {
       return [...items].sort((a, b) => {
+        if (sortType === "nameAsc") {
+          return String(a?.name || "").localeCompare(String(b?.name || ""));
+        }
+
+        if (sortType === "nameDesc") {
+          return String(b?.name || "").localeCompare(String(a?.name || ""));
+        }
+
+        if (sortType === "priceAsc") {
+          return Number(a?.price || 0) - Number(b?.price || 0);
+        }
+
+        if (sortType === "priceDesc") {
+          return Number(b?.price || 0) - Number(a?.price || 0);
+        }
+
         if (sortType === "latest") {
           return (
             new Date(b?.createdAt || b?.updatedAt || 0).getTime() -
@@ -2037,6 +2073,15 @@ export async function searchProductController(request, response) {
         start + requestedLimit,
       );
 
+       const filterOptions = {
+        brands: [...new Set(scoredProducts.map((item) => item?.brand?.trim()).filter(Boolean))],
+        sizes: [...new Set(scoredProducts.flatMap((item) => item?.size || []).filter(Boolean))],
+        productTypes: [...new Set(scoredProducts.map((item) => item?.productType || item?.thirdSubCatName || item?.subCatName || item?.catName).filter(Boolean))],
+        weights: [...new Set(scoredProducts.flatMap((item) => item?.productWeight || []).filter(Boolean))],
+        ramOptions: [...new Set(scoredProducts.flatMap((item) => item?.productRam || []).filter(Boolean))],
+        colors: [...new Set(scoredProducts.flatMap((item) => (item?.colorOptions || []).map((colorItem) => colorItem?.name)).filter(Boolean))],
+      };
+
       return response.status(200).json({
         error: false,
         success: true,
@@ -2056,6 +2101,7 @@ export async function searchProductController(request, response) {
           paginatedProducts,
           fallbackCorrection,
         ),
+        filterOptions,
       });
     }
 
@@ -2066,6 +2112,15 @@ export async function searchProductController(request, response) {
       start,
       start + requestedLimit,
     );
+
+    const filterOptions = {
+      brands: [...new Set(scoredProducts.map((item) => item?.brand?.trim()).filter(Boolean))],
+      sizes: [...new Set(scoredProducts.flatMap((item) => item?.size || []).filter(Boolean))],
+      productTypes: [...new Set(scoredProducts.map((item) => item?.productType || item?.thirdSubCatName || item?.subCatName || item?.catName).filter(Boolean))],
+      weights: [...new Set(scoredProducts.flatMap((item) => item?.productWeight || []).filter(Boolean))],
+      ramOptions: [...new Set(scoredProducts.flatMap((item) => item?.productRam || []).filter(Boolean))],
+      colors: [...new Set(scoredProducts.flatMap((item) => (item?.colorOptions || []).map((colorItem) => colorItem?.name)).filter(Boolean))],
+    };
 
     return response.status(200).json({
       error: false,
@@ -2083,6 +2138,7 @@ export async function searchProductController(request, response) {
       ),
       suggestionProducts: buildSuggestionProducts(scoredProducts),
       aiInsights: buildAiSearchInsights(paginatedProducts, correctedQuery),
+      filterOptions,
     });
   } catch (error) {
     return response.status(500).json({
