@@ -1630,8 +1630,8 @@ export async function filters(request, response) {
     andConditions.push({
       $or: [
         { productType: { $in: productTypes } },
-        { thirdSubCatName: { $in: productTypes } },
-        { subCatName: { $in: productTypes } },
+        { thirdsubCat: { $in: productTypes } },
+        { subCat: { $in: productTypes } },
         { catName: { $in: productTypes } },
       ],
     });
@@ -1645,8 +1645,8 @@ export async function filters(request, response) {
         { description: queryRegex },
         { brand: queryRegex },
         { catName: queryRegex },
-        { subCatName: queryRegex },
-        { thirdSubCatName: queryRegex },
+        { subCat: queryRegex },
+        { thirdsubCat: queryRegex },
       ],
     });
   }
@@ -1697,7 +1697,7 @@ export async function filters(request, response) {
   }
 
   const sortConfig = {
-    bestSeller: { sale: -1, createdAt: -1, _id: -1 },
+    bestSeller: { sale: -1, rating: -1, createdAt: -1, _id: -1 },
     latest: { createdAt: -1, _id: -1 },
     popular: { rating: -1, sale: -1, _id: -1 },
     featured: { isFeatured: -1, sale: -1, _id: -1 },
@@ -1717,15 +1717,16 @@ export async function filters(request, response) {
 
     const total = await ProductModel.countDocuments(filters);
 
-    const filterOptionsProducts = await ProductModel.find(filters)
-      .select("brand size productType thirdSubCatName subCatName catName productWeight productRam colorOptions.name")
+    const filterOptionsProducts = await ProductModel.find({})
+      .select("brand size productType thirdsubCat subCat catName productWeight productRam colorOptions.name")
       .lean();
+
 
     const filterOptions = {
       brands: [...new Set(filterOptionsProducts.map((item) => item?.brand?.trim()).filter(Boolean))],
       sizes: [...new Set(filterOptionsProducts.flatMap((item) => item?.size || []).filter(Boolean))],
       productTypes: [...new Set(filterOptionsProducts
-        .map((item) => item?.productType || item?.thirdSubCatName || item?.subCatName || item?.catName)
+        .map((item) => item?.productType || item?.thirdsubCat || item?.subCat || item?.catName)
         .filter(Boolean))],
       weights: [...new Set(filterOptionsProducts.flatMap((item) => item?.productWeight || []).filter(Boolean))],
       ramOptions: [...new Set(filterOptionsProducts.flatMap((item) => item?.productRam || []).filter(Boolean))],
@@ -1817,8 +1818,8 @@ export async function searchProductController(request, response) {
         if (productTypes?.length) {
           const itemType =
             item?.productType ||
-            item?.thirdSubCatName ||
-            item?.subCatName ||
+            item?.thirdsubCat ||
+            item?.subCat ||
             item?.catName;
           if (!productTypes.includes(itemType)) return false;
         }
@@ -2076,7 +2077,7 @@ export async function searchProductController(request, response) {
        const filterOptions = {
         brands: [...new Set(scoredProducts.map((item) => item?.brand?.trim()).filter(Boolean))],
         sizes: [...new Set(scoredProducts.flatMap((item) => item?.size || []).filter(Boolean))],
-        productTypes: [...new Set(scoredProducts.map((item) => item?.productType || item?.thirdSubCatName || item?.subCatName || item?.catName).filter(Boolean))],
+         productTypes: [...new Set(scoredProducts.map((item) => item?.productType || item?.thirdsubCat || item?.subCat || item?.catName).filter(Boolean))],
         weights: [...new Set(scoredProducts.flatMap((item) => item?.productWeight || []).filter(Boolean))],
         ramOptions: [...new Set(scoredProducts.flatMap((item) => item?.productRam || []).filter(Boolean))],
         colors: [...new Set(scoredProducts.flatMap((item) => (item?.colorOptions || []).map((colorItem) => colorItem?.name)).filter(Boolean))],
@@ -2116,7 +2117,7 @@ export async function searchProductController(request, response) {
     const filterOptions = {
       brands: [...new Set(scoredProducts.map((item) => item?.brand?.trim()).filter(Boolean))],
       sizes: [...new Set(scoredProducts.flatMap((item) => item?.size || []).filter(Boolean))],
-      productTypes: [...new Set(scoredProducts.map((item) => item?.productType || item?.thirdSubCatName || item?.subCatName || item?.catName).filter(Boolean))],
+       productTypes: [...new Set(scoredProducts.map((item) => item?.productType || item?.thirdsubCat || item?.subCat || item?.catName).filter(Boolean))],
       weights: [...new Set(scoredProducts.flatMap((item) => item?.productWeight || []).filter(Boolean))],
       ramOptions: [...new Set(scoredProducts.flatMap((item) => item?.productRam || []).filter(Boolean))],
       colors: [...new Set(scoredProducts.flatMap((item) => (item?.colorOptions || []).map((colorItem) => colorItem?.name)).filter(Boolean))],
