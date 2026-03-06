@@ -1,14 +1,18 @@
 import { sendEmail } from "./emailService.js";
 
-const sendEmailFun=async({sendTo, subject, text, html})=>{
-  console.log(sendTo)
+const sendEmailFun = async ({ sendTo, subject, text, html }) => {
+    // Empty check pehle karo
+    if (!sendTo || (Array.isArray(sendTo) && sendTo.length === 0)) {
+        console.error("sendEmailFun: sendTo is empty or undefined, skipping.");
+        return false;
+    }
+    console.log("Sending email to:", sendTo);
     const result = await sendEmail(sendTo, subject, text, html);
     if (result.success) {
         return true;
-      //res.status(200).json({ message: 'Email sent successfully', messageId: result.messageId });
     } else {
+        console.error("Email failed:", result.error);
         return false;
-     // res.status(500).json({ message: 'Failed to send email', error: result.error });
     }
 }
 

@@ -31,7 +31,9 @@ const updateProductsInventory = async (products = []) => {
 
 const queueOrderConfirmationEmail = async (userId, order) => {
     try {
+        console.log("Fetching user for email, userId:", userId); // Add this
         const user = await UserModel.findById(userId).select("name email").lean();
+        console.log("User found:", user); // Add this
         if (!user?.email) return;
 
         const sent = await sendEmailFun({
