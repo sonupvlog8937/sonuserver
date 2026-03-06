@@ -1,27 +1,38 @@
-import http from 'http';
-import nodemailer from 'nodemailer';
+import dotenv from "dotenv";
+import nodemailer from "nodemailer";
 
-// Configure the SMTP transporter
-const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com', // e.g., 'smtp.gmail.com' for Gmail
-  port: 465, // or 465 for secure
-  secure: true, // true for port 465, false for other ports
-  auth: {
-    user: process.env.EMAIL, // your SMTP username
-    pass: process.env.EMAIL_PASS,    // your SMTP password
-  },
-});
+dotenv.config();
+
+function createTransporter() {
+  const emailUser = process.env.EMAIL;
+  const emailPass = process.env.EMAIL_PASS;
+
+  if (!emailUser || !emailPass) {
+    throw new Error("Missing EMAIL or EMAIL_PASS environment variables");
+  }
+
+  return nodemailer.createTransport({
+    host: process.env.SMTP_HOST || "smtp.gmail.com",
+    port: Number(process.env.SMTP_PORT || 465),
+    secure: (process.env.SMTP_SECURE || "true") === "true",
+    auth: {
+      user: emailUser,
+      pass: emailPass,
+    },
+  });
+}
 
 // Function to send email
 async function sendEmail(to, subject, text, html) {
   try {
+    const transporter = createTransporter();
    
     const info = await transporter.sendMail({
-      from: process.env.EMAIL, // sender address
-      to, // list of receivers
-      subject, // Subject line
-      text, // plain text body
-      html, // html body
+       from: process.env.EMAIL,
+      to,
+      subject,
+      text,
+      html,
     });
     return { success: true, messageId: info.messageId };
   } catch (error) {
