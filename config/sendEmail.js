@@ -1,47 +1,36 @@
-import nodemailer from 'nodemailer';
+import { Resend } from 'resend';
 
-// ─── Transporter ─────────────────────────────────────────────────────────────
-// SMTP_USER aur SMTP_PASS .env se aata hai
-const transporter = nodemailer.createTransport({
-    host:   process.env.SMTP_HOST   || 'smtp.gmail.com',
-    port:   Number(process.env.SMTP_PORT) || 465,
-    secure: process.env.SMTP_SECURE === 'true', // port 465 → true, port 587 → false
-    auth: {
-        user: process.env.SMTP_USER, // sonupvlog8937@gmail.com
-        pass: process.env.SMTP_PASS, // Gmail App Password
-    },
-});
-
-// Server start hone pe connection verify karo
-transporter.verify((error) => {
-    if (error) {
-        console.error('❌ Email transporter failed:', error.message);
-    } else {
-        console.log('✅ Email transporter ready —', process.env.SMTP_USER);
-    }
-});
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 /**
- * Email bhejne ka main function
+ * Email bhejne ka main function — Resend API use karta hai
+ * (SMTP ki jagah HTTP API — Render pe kaam karta hai)
  *
  * @param {Object}          options
- * @param {string|string[]} options.sendTo   - ek ya zyada recipient emails
- * @param {string}          options.subject  - email subject line
+ * @param {string|string[]} options.sendTo   - recipient email(s)
+ * @param {string}          options.subject  - email subject
  * @param {string}          [options.text]   - plain text fallback
  * @param {string}          options.html     - HTML body
- * @returns {Promise<boolean>}               - true = sent, false = failed
+ * @returns {Promise<boolean>}
  */
 const sendEmailFun = async ({ sendTo, subject, text = '', html }) => {
     try {
-        const info = await transporter.sendMail({
-            from:    `"${process.env.STORE_NAME || 'MyStore'}" <${process.env.SMTP_USER}>`,
-            to:      Array.isArray(sendTo) ? sendTo.join(', ') : sendTo,
+        const { data, error } = await resend.emails.send({
+            from: `${process.env.STORE_NAME || 'MyStore'} <onboarding@resend.dev>`,
+            // ↑ Resend free plan mein apna domain verify karne tak onboarding@resend.dev use karo
+            // Custom domain baad mein: noreply@yourdomain.com
+            to: Array.isArray(sendTo) ? sendTo : [sendTo],
             subject,
             text,
             html,
         });
 
-        console.log(`📧 Email sent → ${info.envelope.to} | ID: ${info.messageId}`);
+        if (error) {
+            console.error('❌ Resend email error:', error);
+            return false;
+        }
+
+        console.log(`📧 Email sent → ${sendTo} | ID: ${data?.id}`);
         return true;
 
     } catch (error) {
