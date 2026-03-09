@@ -24,8 +24,8 @@ import mongoose from 'mongoose';
 
 const app = express();
 const allowedOrigins = [
-  "https://www.zeedaddy.in",  // production (www)
-  "https://zeedaddy.in",      // production (non-www)
+  "https://www.zeedaddy.in",  // production (www zeedaddy)
+  "https://zeedaddy.in",      // production (non-www zeedaddy)
   "http://localhost:5173",    // local dev
 ];
 
