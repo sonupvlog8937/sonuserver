@@ -25,15 +25,14 @@ import mongoose from 'mongoose';
 const app = express();
 app.use(cors({
   origin: [
-    "http://localhost:5173",   // local dev
-    "http://localhost:3000",   // local dev alternate
-    "https://zeedaddy.in",     // production frontend
+    "http://zeedaddy.in",   // local dev
+    "http://localhost:5173",    // production frontend
   ],
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
 }));
 app.options('*', cors({
-  origin: ["http://localhost:5173", "http://localhost:3000", "https://zeedaddy.in"],
+  origin: ["http://zeedaddy.in", "https://zeedaddy.in"],
   credentials: true,
 }));
 
