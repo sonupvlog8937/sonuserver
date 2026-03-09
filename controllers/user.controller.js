@@ -1,8 +1,8 @@
 import UserModel from '../models/user.model.js'
 import bcryptjs from 'bcryptjs'
-// import jwt from 'jsonwebtoken'
-// import sendEmailFun from '../config/sendEmail.js';
-// import VerificationEmail from '../utils/verifyEmailTemplate.js';
+import jwt from 'jsonwebtoken'
+import sendEmailFun from '../config/sendEmail.js';
+import VerificationEmail from '../utils/verifyEmailTemplate.js';
 import generatedAccessToken from '../utils/generatedAccessToken.js';
 import genertedRefreshToken from '../utils/generatedRefreshToken.js';
 
@@ -20,94 +20,62 @@ cloudinary.config({
 
 export async function registerUserController(request, response) {
     try {
-        let user;
-
         const { name, email, password } = request.body;
+
         if (!name || !email || !password) {
             return response.status(400).json({
-                message: "provide email, name, password",
+                message: "Please provide name, email and password",
                 error: true,
                 success: false
-            })
+            });
         }
 
-        user = await UserModel.findOne({ email: email });
-
-        if (user) {
+        const existingUser = await UserModel.findOne({ email });
+        if (existingUser) {
             return response.json({
-                message: "User already Registered with this email",
+                message: "User already registered with this email",
                 error: true,
                 success: false
-            })
+            });
         }
 
-        // const verifyCode = Math.floor(100000 + Math.random() * 900000).toString();
-
+        // Generate 6-digit OTP
+        const verifyCode = Math.floor(100000 + Math.random() * 900000).toString();
 
         const salt = await bcryptjs.genSalt(10);
         const hashPassword = await bcryptjs.hash(password, salt);
 
-        user = new UserModel({
-            email: email,
+        const user = new UserModel({
+            email,
             password: hashPassword,
-            name: name,
-            // otp: verifyCode,
-            // otpExpires: Date.now() + 600000,
-            verify_email: true,
-
+            name,
+            otp: verifyCode,
+            otpExpires: Date.now() + 10 * 60 * 1000, // 10 minutes
+            verify_email: false,  // must verify before login
         });
 
         await user.save();
 
-        // Send verification email
-        // await sendEmailFun({
-        //     sendTo: email,
-        //     subject: "Verify email from Ecommerce App",
-        //     text: "",
-        //     html: VerificationEmail(name, verifyCode)
-         const accesstoken = await generatedAccessToken(user._id);
-        const refreshToken = await genertedRefreshToken(user._id);
-
-        await UserModel.findByIdAndUpdate(user?._id, {
-            last_login_date: new Date()
-        })
-
-
-        // Create a JWT token for verification purposes
-        // const token = jwt.sign(
-        //     { email: user.email, id: user._id },
-        //     process.env.JSON_WEB_TOKEN_SECRET_KEY
-        // );
-
-        const cookiesOption = {
-            httpOnly: true,
-            secure: true,
-            sameSite: "None"
-        }
-        response.cookie('accessToken', accesstoken, cookiesOption)
-        response.cookie('refreshToken', refreshToken, cookiesOption)
-
+        // Send verification email (non-blocking — don't fail registration if email fails)
+        sendEmailFun({
+            sendTo: email,
+            subject: `Verify your email – ${process.env.STORE_NAME || 'MyStore'}`,
+            text: `Your OTP is: ${verifyCode}. It expires in 10 minutes.`,
+            html: VerificationEmail(name, verifyCode)
+        }).catch((err) => console.error('Verification email error:', err));
 
         return response.status(200).json({
             success: true,
             error: false,
-            // message: "User registered successfully! ",
-            // token: token, // Optional: include this if needed for verification
-            message: "User registered successfully",
-            data: {
-                accesstoken,
-                refreshToken
-            }
+            message: "Registered successfully! Please check your email to verify your account.",
         });
-
-
 
     } catch (error) {
         return response.status(500).json({
             message: error.message || error,
             error: true,
             success: false
-        })
+        });
     }
 }
 
@@ -128,11 +96,27 @@ export async function verifyEmailController(request, response) {
             user.otp = null;
             user.otpExpires = null;
             await user.save();
-            return response.status(200).json({ error: false, success: true, message: "Email verified successfully" });
+
+            // Issue tokens so user is logged in immediately after verification
+            const accesstoken = await generatedAccessToken(user._id);
+            const refreshToken = await genertedRefreshToken(user._id);
+
+            await UserModel.findByIdAndUpdate(user._id, { last_login_date: new Date() });
+
+            const cookiesOption = { httpOnly: true, secure: true, sameSite: "None" };
+            response.cookie('accessToken', accesstoken, cookiesOption);
+            response.cookie('refreshToken', refreshToken, cookiesOption);
+
+            return response.status(200).json({
+                error: false,
+                success: true,
+                message: "Email verified successfully! You are now logged in.",
+                data: { accesstoken, refreshToken }
+            });
         } else if (!isCodeValid) {
             return response.status(400).json({ error: true, success: false, message: "Invalid OTP" });
         } else {
-            return response.status(400).json({ error: true, success: false, message: "OTP expired" });
+            return response.status(400).json({ error: true, success: false, message: "OTP expired. Please request a new one." });
         }
 
     } catch (error) {
@@ -993,4 +977,66 @@ export async function deleteMultiple(request, response) {
         })
     }
 
+}
+
+
+// ─── Resend OTP Controller ────────────────────────────────────────────────────
+// Route: POST /api/user/resend-otp
+export async function resendOtpController(request, response) {
+    try {
+        const { email } = request.body;
+
+        if (!email) {
+            return response.status(400).json({
+                error: true,
+                success: false,
+                message: "Email is required"
+            });
+        }
+
+        const user = await UserModel.findOne({ email });
+
+        if (!user) {
+            return response.status(404).json({
+                error: true,
+                success: false,
+                message: "User not found with this email"
+            });
+        }
+
+        if (user.verify_email === true) {
+            return response.status(400).json({
+                error: true,
+                success: false,
+                message: "Email is already verified"
+            });
+        }
+
+        // Naya OTP generate karo
+        const newOtp = Math.floor(100000 + Math.random() * 900000).toString();
+        user.otp        = newOtp;
+        user.otpExpires = Date.now() + 10 * 60 * 1000; // 10 minutes
+        await user.save();
+
+        // Email bhejo (non-blocking)
+        sendEmailFun({
+            sendTo: email,
+            subject: `Your new OTP – ${process.env.STORE_NAME || 'MyStore'}`,
+            text: `Your new OTP is: ${newOtp}. It expires in 10 minutes.`,
+            html: VerificationEmail(user.name, newOtp)
+        }).catch((err) => console.error('Resend OTP email error:', err));
+
+        return response.status(200).json({
+            error: false,
+            success: true,
+            message: "New OTP sent to your email!"
+        });
+
+    } catch (error) {
+        return response.status(500).json({
+            message: error.message || error,
+            error: true,
+            success: false
+        });
+    }
 }

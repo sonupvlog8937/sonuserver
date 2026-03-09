@@ -1,20 +1,42 @@
-import { sendEmail } from "./emailService.js";
+import { Resend } from 'resend';
 
-const sendEmailFun = async ({ sendTo, subject, text, html }) => {
-    // Empty check pehle karo
-    if (!sendTo || (Array.isArray(sendTo) && sendTo.length === 0)) {
-        console.error("sendEmailFun: sendTo is empty or undefined, skipping.");
-        return false;
-    }
-    console.log("Sending email to:", sendTo);
-    const result = await sendEmail(sendTo, subject, text, html);
-    if (result.success) {
+const resend = new Resend(process.env.RESEND_API_KEY);
+
+/**
+ * Email bhejne ka main function — Resend API use karta hai
+ * (SMTP ki jagah HTTP API — Render pe kaam karta hai)
+ *
+ * @param {Object}          options
+ * @param {string|string[]} options.sendTo   - recipient email(s)
+ * @param {string}          options.subject  - email subject
+ * @param {string}          [options.text]   - plain text fallback
+ * @param {string}          options.html     - HTML body
+ * @returns {Promise<boolean>}
+ */
+const sendEmailFun = async ({ sendTo, subject, text = '', html }) => {
+    try {
+        const { data, error } = await resend.emails.send({
+            from: `${process.env.STORE_NAME || 'MyStore'} <onboarding@resend.dev>`,
+            // ↑ Resend free plan mein apna domain verify karne tak onboarding@resend.dev use karo
+            // Custom domain baad mein: noreply@yourdomain.com
+            to: Array.isArray(sendTo) ? sendTo : [sendTo],
+            subject,
+            text,
+            html,
+        });
+
+        if (error) {
+            console.error('❌ Resend email error:', error);
+            return false;
+        }
+
+        console.log(`📧 Email sent → ${sendTo} | ID: ${data?.id}`);
         return true;
-    } else {
-        console.error("Email failed:", result.error);
+
+    } catch (error) {
+        console.error('❌ sendEmailFun error:', error.message);
         return false;
     }
-}
-
+};
 
 export default sendEmailFun;

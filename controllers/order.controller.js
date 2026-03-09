@@ -31,23 +31,28 @@ const updateProductsInventory = async (products = []) => {
 
 const queueOrderConfirmationEmail = async (userId, order) => {
     try {
-        console.log("Fetching user for email, userId:", userId); // Add this
         const user = await UserModel.findById(userId).select("name email").lean();
-        console.log("User found:", user); // Add this
-        if (!user?.email) return;
+        if (!user?.email) {
+            console.warn("Order email skipped — no email found for userId:", userId);
+            return;
+        }
+
+        const storeName = process.env.STORE_NAME || 'MyStore';
 
         const sent = await sendEmailFun({
-            sendTo: [user.email],
-            subject: "Order Confirmation",
-            text: "",
+            sendTo: user.email,
+            subject: `✅ Order Confirmed – #${order?._id?.toString().slice(-8).toUpperCase()} | ${storeName}`,
+            text: `Hi ${user.name}, your order has been placed successfully! Order ID: ${order?._id}. Total: ₹${order?.totalAmt}`,
             html: OrderConfirmationEmail(user.name, order)
         });
 
         if (!sent) {
-            console.error("Order confirmation email failed to send", { userId, orderId: order?._id });
+            console.error("❌ Order confirmation email failed", { userId, orderId: order?._id });
+        } else {
+            console.log(`📧 Order confirmation email sent to ${user.email}`);
         }
     } catch (error) {
-        console.error("Order confirmation email error", error);
+        console.error("Order confirmation email error:", error.message);
     }
 };
 
