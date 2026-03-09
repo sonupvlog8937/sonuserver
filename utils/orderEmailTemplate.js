@@ -1,23 +1,31 @@
 /**
  * orderEmailTemplate.js
  * Order confirm hone ke baad customer ko jaane wali email
+ * Professional & Production-Ready Design
  *
  * @param {string} username  - customer ka naam
  * @param {Object} orders    - Mongoose order document
  * @returns {string}         - HTML string
  */
 const OrderConfirmationEmail = (username, orders) => {
-    const storeName  = process.env.STORE_NAME  || 'MyStore';
-    const storeColor = process.env.STORE_COLOR || '#4CAF50';
+    const storeName  = process.env.STORE_NAME  || 'Zeedaddy';
+    const storeColor = process.env.STORE_COLOR || '#1a1a2e';
     const storeUrl   = process.env.STORE_URL   || '#';
     const year       = new Date().getFullYear();
 
+    const accentColor   = '#e94560';
+    const accentLight   = '#fff0f3';
+    const darkBg        = '#1a1a2e';
+    const textDark      = '#0f0f1a';
+    const textMid       = '#4a4a6a';
+    const textLight     = '#8888aa';
+    const borderColor   = '#ebebf5';
+    const successGreen  = '#00c896';
+    const warningYellow = '#ffb800';
+
     const products = Array.isArray(orders?.products) ? orders.products : [];
 
-    // ── Total calculate karo (bug fix: subTotal already per-item total hai) ──
     const grandTotal = products.reduce((sum, item) => {
-        // subTotal = price × qty already set by frontend in most cases
-        // Agar nahi hai toh price × quantity use karo
         const lineTotal = item?.subTotal
             ? Number(item.subTotal)
             : Number(item?.price || 0) * Number(item?.quantity || 1);
@@ -32,189 +40,222 @@ const OrderConfirmationEmail = (username, orders) => {
         ? new Date(orders.date).toLocaleDateString('en-IN', { year: 'numeric', month: 'long', day: 'numeric' })
         : new Date().toLocaleDateString('en-IN', { year: 'numeric', month: 'long', day: 'numeric' });
 
-    const payStatus   = orders?.payment_status || 'Pending';
-    const badgeBg     = payStatus?.toLowerCase() === 'paid' ? '#dcfce7' : '#fef9c3';
-    const badgeColor  = payStatus?.toLowerCase() === 'paid' ? '#166534' : '#92400e';
+    const payStatus  = orders?.payment_status || 'Pending';
+    const isPaid     = payStatus?.toLowerCase() === 'paid';
+    const badgeBg    = isPaid ? '#e6faf5' : '#fff8e6';
+    const badgeColor = isPaid ? '#00a87a' : '#cc8800';
+    const badgeDot   = isPaid ? successGreen : warningYellow;
 
-    // ── Product Rows ──────────────────────────────────────────────────────────
+    // ── Product Cards (card-style, no inner table) ────────────────────────────
     const productRowsHtml = products.length > 0
-        ? products.map((item) => {
-            const name     = item?.productTitle || item?.name || 'Product';
-            const qty      = Number(item?.quantity || 1);
-            const lineAmt  = item?.subTotal
+        ? products.map((item, index) => {
+            const name    = item?.productTitle || item?.name || 'Product';
+            const qty     = Number(item?.quantity || 1);
+            const lineAmt = item?.subTotal
                 ? Number(item.subTotal)
                 : Number(item?.price || 0) * qty;
-            const image    = item?.image || (Array.isArray(item?.images) ? item.images[0] : '');
+            const image   = item?.image || (Array.isArray(item?.images) ? item.images[0] : '');
+            const isLast  = index === products.length - 1;
 
             return `
             <tr>
-              <td style="padding:14px 12px;border-bottom:1px solid #f0f0f0;vertical-align:middle;">
-                <table cellpadding="0" cellspacing="0">
-                  <tr>
-                    ${image ? `
-                    <td style="padding-right:12px;vertical-align:middle;">
-                      <img src="${image}" alt="${name}"
-                           width="52" height="52"
-                           style="border-radius:8px;object-fit:cover;
-                                  border:1px solid #e5e5e5;display:block;"/>
-                    </td>` : ''}
-                    <td style="vertical-align:middle;">
-                      <p style="margin:0;font-size:14px;font-weight:600;color:#111;">${name}</p>
-                      ${item?.size  ? `<p style="margin:2px 0 0;font-size:12px;color:#999;">Size: ${item.size}</p>` : ''}
-                      ${item?.color ? `<p style="margin:2px 0 0;font-size:12px;color:#999;">Color: ${item.color}</p>` : ''}
-                    </td>
-                  </tr>
-                </table>
-              </td>
-              <td style="padding:14px 12px;border-bottom:1px solid #f0f0f0;
-                         text-align:center;font-size:14px;color:#555;vertical-align:middle;">
-                ${qty}
-              </td>
-              <td style="padding:14px 12px;border-bottom:1px solid #f0f0f0;
-                         text-align:right;font-size:14px;font-weight:600;
-                         color:#111;vertical-align:middle;">
-                ${formatINR(lineAmt)}
+              <td style="padding:${index === 0 ? '8px 8px 4px' : '4px 8px'}${isLast ? ' 8px' : ''};">
+
+                <!-- Product Card -->
+                <div style="background:#ffffff;border:1px solid ${borderColor};border-radius:14px;padding:16px 18px;display:flex;align-items:center;">
+
+                  <!-- Left: Image + Info -->
+                  <div style="display:inline-block;vertical-align:middle;${image ? 'width:calc(100% - 120px)' : 'width:calc(100% - 60px)'};">
+                    <div style="display:inline-block;vertical-align:middle;">
+                      ${image ? `
+                      <img src="${image}" alt="${name}" width="56" height="56"
+                           style="display:inline-block;vertical-align:middle;width:56px;height:56px;
+                                  border-radius:10px;object-fit:cover;border:1px solid ${borderColor};
+                                  margin-right:14px;"/>` : ''}
+                    </div>
+                    <div style="display:inline-block;vertical-align:middle;max-width:280px;">
+                      <p style="margin:0 0 3px;font-size:14px;font-weight:700;color:${textDark};line-height:1.3;">${name}</p>
+                      <p style="margin:0;font-size:12px;color:${textLight};line-height:1.5;">
+                        ${item?.size  ? `Size: <strong style="color:${textMid};">${item.size}</strong>&nbsp;&nbsp;` : ''}
+                        ${item?.color ? `Color: <strong style="color:${textMid};">${item.color}</strong>` : ''}
+                      </p>
+                    </div>
+                  </div>
+
+                  <!-- Right: Qty + Price -->
+                  <div style="display:inline-block;vertical-align:middle;text-align:right;float:right;min-width:100px;">
+                    <p style="margin:0 0 4px;">
+                      <span style="display:inline-block;background:#f4f4fc;color:${textMid};
+                                   font-size:12px;font-weight:600;padding:3px 10px;
+                                   border-radius:20px;">Qty: ${qty}</span>
+                    </p>
+                    <p style="margin:0;font-size:16px;font-weight:800;color:${accentColor};">${formatINR(lineAmt)}</p>
+                  </div>
+
+                </div>
               </td>
             </tr>`;
         }).join('')
         : `<tr>
-             <td colspan="3" style="padding:24px;text-align:center;color:#999;font-size:14px;">
+             <td style="padding:32px;text-align:center;color:${textLight};font-size:14px;">
                No products found.
              </td>
            </tr>`;
 
     return `<!DOCTYPE html>
-<html lang="en">
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <meta http-equiv="X-UA-Compatible" content="IE=edge"/>
   <title>Order Confirmed – ${storeName}</title>
+  <!--[if mso]>
+  <noscript>
+    <xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml>
+  </noscript>
+  <![endif]-->
 </head>
-<body style="margin:0;padding:0;background:#f4f4f4;font-family:Arial,sans-serif;color:#333;">
+<body style="margin:0;padding:0;background-color:#f0f0f8;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
 
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f4;padding:30px 16px;">
-    <tr><td align="center">
-      <table width="620" cellpadding="0" cellspacing="0"
-             style="max-width:620px;width:100%;background:#ffffff;
-                    border-radius:10px;overflow:hidden;
-                    box-shadow:0 4px 12px rgba(0,0,0,0.1);">
+<!-- Preheader (hidden) -->
+<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">
+  Your order has been confirmed! Hi ${username}, we've received your order and it's being processed. Order #${orderId.slice(-8).toUpperCase()}
+</div>
+<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;</div>
 
-        <!-- ── Header ── -->
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f0f0f8;padding:40px 16px;">
+  <tr>
+    <td align="center">
+
+      <!-- ═══════════════════════════════════════ -->
+      <!-- MAIN CONTAINER                         -->
+      <!-- ═══════════════════════════════════════ -->
+      <table width="600" cellpadding="0" cellspacing="0" border="0"
+             style="max-width:600px;width:100%;">
+
+        <!-- ── TOP LOGO BAR ── -->
         <tr>
-          <td style="background:${storeColor};padding:28px 32px;text-align:center;">
-            <h1 style="margin:0;color:#ffffff;font-size:24px;font-weight:700;">
-              ${storeName}
-            </h1>
-            <p style="margin:6px 0 0;color:rgba(255,255,255,0.88);font-size:14px;">
-              Order Confirmation
-            </p>
-          </td>
-        </tr>
-
-        <!-- ── Success message ── -->
-        <tr>
-          <td style="padding:36px 40px 24px;text-align:center;">
-            <div style="font-size:48px;margin-bottom:12px;">✅</div>
-            <h2 style="margin:0 0 8px;font-size:22px;font-weight:700;color:#111;">
-              Order Placed Successfully!
-            </h2>
-            <p style="margin:0;font-size:15px;color:#555;line-height:1.7;">
-              Hi <strong>${username}</strong>, your order has been received.<br/>
-              We'll start processing it right away.
-            </p>
-          </td>
-        </tr>
-
-        <!-- ── Order Meta Card ── -->
-        <tr>
-          <td style="padding:0 40px 24px;">
-            <table width="100%" cellpadding="0" cellspacing="0"
-                   style="background:#f9f9f9;border:1px solid #eeeeee;border-radius:8px;">
+          <td style="padding-bottom:24px;text-align:center;">
+            <table cellpadding="0" cellspacing="0" border="0" align="center">
               <tr>
-                <td style="padding:18px 24px;">
-                  <table width="100%" cellpadding="0" cellspacing="0">
-                    <tr>
-                      <td style="padding:4px 0;">
-                        <span style="font-size:12px;color:#999;display:block;">Order ID</span>
-                        <span style="font-size:13px;font-weight:700;color:#111;
-                                     font-family:monospace;">#${orderId.slice(-8).toUpperCase()}</span>
-                      </td>
-                      <td style="padding:4px 0;text-align:center;">
-                        <span style="font-size:12px;color:#999;display:block;">Date</span>
-                        <span style="font-size:13px;font-weight:600;color:#111;">${orderDate}</span>
-                      </td>
-                      <td style="padding:4px 0;text-align:right;">
-                        <span style="font-size:12px;color:#999;display:block;">Payment</span>
-                        <span style="display:inline-block;background:${badgeBg};color:${badgeColor};
-                                     font-size:11px;font-weight:700;padding:3px 10px;
-                                     border-radius:20px;text-transform:uppercase;letter-spacing:0.5px;">
-                          ${payStatus}
-                        </span>
-                      </td>
-                    </tr>
-                  </table>
+                <td style="background:${darkBg};padding:14px 32px;border-radius:50px;">
+                  <span style="font-size:20px;font-weight:800;color:#ffffff;letter-spacing:1px;font-family:Georgia,serif;">
+                    ${storeName.toUpperCase()}
+                  </span>
                 </td>
               </tr>
             </table>
           </td>
         </tr>
 
-        <!-- ── Products Table ── -->
+        <!-- ── HERO CARD ── -->
         <tr>
-          <td style="padding:0 40px 16px;">
-            <h3 style="margin:0 0 12px;font-size:16px;font-weight:700;color:#111;">
-              Order Items
-            </h3>
-            <table width="100%" cellpadding="0" cellspacing="0"
-                   style="border:1px solid #eeeeee;border-radius:8px;
-                           border-collapse:separate;border-spacing:0;overflow:hidden;">
-              <!-- Table Header -->
-              <tr style="background:#f5f5f5;">
-                <th style="padding:12px;text-align:left;font-size:12px;color:#888;
-                            font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">
-                  Product
-                </th>
-                <th style="padding:12px;text-align:center;font-size:12px;color:#888;
-                            font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">
-                  Qty
-                </th>
-                <th style="padding:12px;text-align:right;font-size:12px;color:#888;
-                            font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">
-                  Amount
-                </th>
+          <td style="background:${darkBg};border-radius:20px 20px 0 0;padding:48px 40px 40px;text-align:center;">
+
+            <!-- Success Icon -->
+            <div style="display:inline-block;width:72px;height:72px;background:${accentColor};border-radius:50%;margin-bottom:20px;line-height:72px;text-align:center;">
+              <span style="font-size:32px;line-height:72px;display:inline-block;">✓</span>
+            </div>
+
+            <h1 style="margin:0 0 12px;font-size:28px;font-weight:800;color:#ffffff;font-family:Georgia,serif;line-height:1.2;">
+              Order Confirmed!
+            </h1>
+            <p style="margin:0 0 24px;font-size:15px;color:rgba(255,255,255,0.65);line-height:1.7;">
+              Hey <strong style="color:#ffffff;">${username}</strong>, thank you for your purchase.<br/>
+              Your order is confirmed and being processed.
+            </p>
+
+            <!-- Order ID Badge -->
+            <div style="display:inline-block;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:12px;padding:12px 28px;">
+              <p style="margin:0 0 2px;font-size:11px;color:rgba(255,255,255,0.45);text-transform:uppercase;letter-spacing:2px;">Order ID</p>
+              <p style="margin:0;font-size:18px;font-weight:800;color:#ffffff;letter-spacing:2px;font-family:'Courier New',monospace;">
+                #${orderId.slice(-8).toUpperCase()}
+              </p>
+            </div>
+          </td>
+        </tr>
+
+        <!-- ── ORDER META STRIP ── -->
+        <tr>
+          <td style="background:#ffffff;padding:0;">
+            <table width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <!-- Date -->
+                <td style="padding:20px;text-align:center;border-right:1px solid ${borderColor};">
+                  <p style="margin:0 0 4px;font-size:10px;color:${textLight};text-transform:uppercase;letter-spacing:1.5px;">Date</p>
+                  <p style="margin:0;font-size:13px;font-weight:600;color:${textDark};">${orderDate}</p>
+                </td>
+                <!-- Payment Status -->
+                <td style="padding:20px;text-align:center;border-right:1px solid ${borderColor};">
+                  <p style="margin:0 0 6px;font-size:10px;color:${textLight};text-transform:uppercase;letter-spacing:1.5px;">Payment</p>
+                  <span style="display:inline-block;background:${badgeBg};color:${badgeColor};font-size:11px;font-weight:700;padding:4px 12px;border-radius:20px;text-transform:uppercase;letter-spacing:0.5px;">
+                    <span style="display:inline-block;width:6px;height:6px;background:${badgeDot};border-radius:50%;margin-right:5px;vertical-align:middle;"></span>${payStatus}
+                  </span>
+                </td>
+                <!-- Delivery -->
+                <td style="padding:20px;text-align:center;">
+                  <p style="margin:0 0 4px;font-size:10px;color:${textLight};text-transform:uppercase;letter-spacing:1.5px;">Delivery</p>
+                  <p style="margin:0;font-size:13px;font-weight:600;color:${textDark};">3–5 Business Days</p>
+                </td>
               </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- ── DIVIDER ── -->
+        <tr>
+          <td style="background:#ffffff;padding:0 24px;">
+            <div style="height:1px;background:linear-gradient(to right,transparent,${borderColor},transparent);"></div>
+          </td>
+        </tr>
+
+        <!-- ── PRODUCTS SECTION ── -->
+        <tr>
+          <td style="background:#f0f0f8;padding:20px 16px 8px;">
+            <p style="margin:0 0 12px;font-size:11px;font-weight:700;color:#8888aa;text-transform:uppercase;letter-spacing:2px;padding:0 8px;">Order Items</p>
+            <table width="100%" cellpadding="0" cellspacing="0" border="0">
               ${productRowsHtml}
             </table>
           </td>
         </tr>
 
-        <!-- ── Grand Total ── -->
+        <!-- ── TOTAL SECTION ── -->
         <tr>
-          <td style="padding:0 40px 28px;">
-            <table width="100%" cellpadding="0" cellspacing="0">
+          <td style="background:#ffffff;padding:16px 24px 28px;">
+            <table width="100%" cellpadding="0" cellspacing="0" border="0">
               <tr>
-                <td></td>
-                <td style="width:220px;">
-                  <table width="100%" cellpadding="0" cellspacing="0"
-                         style="background:#f9f9f9;border:1px solid #eeeeee;
-                                 border-radius:8px;padding:14px 18px;">
+                <td style="width:50%;"></td>
+                <td style="width:50%;">
+                  <table width="100%" cellpadding="0" cellspacing="0" border="0"
+                         style="background:#f8f8fc;border-radius:12px;overflow:hidden;">
                     <tr>
-                      <td style="padding:4px 0 4px 14px;font-size:13px;color:#555;">
-                        Estimated Delivery
-                      </td>
-                      <td style="padding:4px 14px 4px 0;text-align:right;font-size:13px;
-                                  font-weight:600;color:#111;">
-                        3–5 business days
+                      <td style="padding:14px 18px 8px;">
+                        <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                          <tr>
+                            <td style="font-size:12px;color:${textLight};">Subtotal</td>
+                            <td style="text-align:right;font-size:12px;color:${textMid};font-weight:500;">${formatINR(grandTotal)}</td>
+                          </tr>
+                        </table>
                       </td>
                     </tr>
                     <tr>
-                      <td style="padding:10px 0 4px 14px;font-size:15px;font-weight:700;
-                                  color:#111;border-top:1px solid #eee;">
-                        Total
+                      <td style="padding:8px 18px 8px;">
+                        <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                          <tr>
+                            <td style="font-size:12px;color:${textLight};">Shipping</td>
+                            <td style="text-align:right;font-size:12px;color:${successGreen};font-weight:600;">FREE</td>
+                          </tr>
+                        </table>
                       </td>
-                      <td style="padding:10px 14px 4px 0;text-align:right;font-size:17px;
-                                  font-weight:800;color:${storeColor};border-top:1px solid #eee;">
-                        ${formatINR(grandTotal)}
+                    </tr>
+                    <tr>
+                      <td style="padding:10px 18px 14px;border-top:1px solid ${borderColor};">
+                        <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                          <tr>
+                            <td style="font-size:14px;font-weight:700;color:${textDark};">Total</td>
+                            <td style="text-align:right;font-size:20px;font-weight:800;color:${accentColor};">${formatINR(grandTotal)}</td>
+                          </tr>
+                        </table>
                       </td>
                     </tr>
                   </table>
@@ -224,41 +265,107 @@ const OrderConfirmationEmail = (username, orders) => {
           </td>
         </tr>
 
-        <!-- ── CTA Button ── -->
+        <!-- ── TRACKING STEPS ── -->
         <tr>
-          <td style="padding:0 40px 36px;text-align:center;">
-            <a href="${storeUrl}/orders"
-               style="display:inline-block;background:${storeColor};color:#ffffff;
-                      font-size:15px;font-weight:700;padding:14px 40px;
-                      border-radius:8px;text-decoration:none;letter-spacing:0.3px;">
-              View My Orders →
+          <td style="background:#ffffff;padding:0 24px 28px;">
+            <div style="background:#f8f8fc;border-radius:14px;padding:20px 24px;">
+              <p style="margin:0 0 16px;font-size:11px;font-weight:700;color:${textLight};text-transform:uppercase;letter-spacing:2px;">Order Journey</p>
+              <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <!-- Step 1: Confirmed -->
+                  <td style="text-align:center;width:25%;">
+                    <div style="width:36px;height:36px;background:${accentColor};border-radius:50%;margin:0 auto 8px;line-height:36px;text-align:center;">
+                      <span style="color:#fff;font-size:14px;font-weight:700;">✓</span>
+                    </div>
+                    <p style="margin:0;font-size:10px;font-weight:600;color:${accentColor};">Confirmed</p>
+                  </td>
+                  <!-- Line -->
+                  <td style="padding-bottom:20px;">
+                    <div style="height:2px;background:linear-gradient(to right,${accentColor},${borderColor});border-radius:2px;"></div>
+                  </td>
+                  <!-- Step 2: Processing -->
+                  <td style="text-align:center;width:25%;">
+                    <div style="width:36px;height:36px;background:${darkBg};border-radius:50%;margin:0 auto 8px;line-height:36px;text-align:center;">
+                      <span style="color:rgba(255,255,255,0.5);font-size:14px;">⚙</span>
+                    </div>
+                    <p style="margin:0;font-size:10px;font-weight:600;color:${textLight};">Processing</p>
+                  </td>
+                  <!-- Line -->
+                  <td style="padding-bottom:20px;">
+                    <div style="height:2px;background:${borderColor};border-radius:2px;"></div>
+                  </td>
+                  <!-- Step 3: Shipped -->
+                  <td style="text-align:center;width:25%;">
+                    <div style="width:36px;height:36px;background:#f0f0f8;border:2px solid ${borderColor};border-radius:50%;margin:0 auto 8px;line-height:32px;text-align:center;">
+                      <span style="color:${textLight};font-size:14px;">📦</span>
+                    </div>
+                    <p style="margin:0;font-size:10px;font-weight:600;color:${textLight};">Shipped</p>
+                  </td>
+                  <!-- Line -->
+                  <td style="padding-bottom:20px;">
+                    <div style="height:2px;background:${borderColor};border-radius:2px;"></div>
+                  </td>
+                  <!-- Step 4: Delivered -->
+                  <td style="text-align:center;width:25%;">
+                    <div style="width:36px;height:36px;background:#f0f0f8;border:2px solid ${borderColor};border-radius:50%;margin:0 auto 8px;line-height:32px;text-align:center;">
+                      <span style="color:${textLight};font-size:14px;">🏠</span>
+                    </div>
+                    <p style="margin:0;font-size:10px;font-weight:600;color:${textLight};">Delivered</p>
+                  </td>
+                </tr>
+              </table>
+            </div>
+          </td>
+        </tr>
+
+        <!-- ── CTA BUTTON ── -->
+        <tr>
+          <td style="background:#ffffff;padding:0 24px 32px;text-align:center;">
+            <a href="${storeUrl}/my-orders"
+               style="display:inline-block;background:${darkBg};color:#ffffff;font-size:14px;font-weight:700;padding:16px 48px;border-radius:50px;text-decoration:none;letter-spacing:0.5px;">
+              Track My Order →
             </a>
-            <p style="margin:18px 0 0;font-size:13px;color:#999;line-height:1.6;">
-              Questions? Just reply to this email — we're happy to help!
+            <p style="margin:16px 0 0;font-size:13px;color:${textLight};">
+              Need help? <a href="mailto:support@${storeName.toLowerCase()}.in" style="color:${accentColor};text-decoration:none;font-weight:600;">Contact Support</a>
             </p>
           </td>
         </tr>
 
-        <!-- ── Divider ── -->
+        <!-- ── BOTTOM CARD ── -->
         <tr>
-          <td style="padding:0 40px;">
-            <hr style="border:none;border-top:1px solid #eeeeee;margin:0;"/>
+          <td style="background:${darkBg};border-radius:0 0 20px 20px;padding:28px 40px;">
+            <table width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <!-- Store info -->
+                <td style="vertical-align:top;">
+                  <p style="margin:0 0 4px;font-size:16px;font-weight:800;color:#ffffff;font-family:Georgia,serif;">${storeName}</p>
+                  <p style="margin:0;font-size:12px;color:rgba(255,255,255,0.4);">Online Shopping App</p>
+                </td>
+                <!-- Social / links -->
+                <td style="text-align:right;vertical-align:top;">
+                  <a href="${storeUrl}" style="display:inline-block;background:rgba(255,255,255,0.08);color:rgba(255,255,255,0.7);font-size:12px;font-weight:600;padding:8px 16px;border-radius:20px;text-decoration:none;">Visit Store</a>
+                </td>
+              </tr>
+              <tr>
+                <td colspan="2" style="padding-top:20px;border-top:1px solid rgba(255,255,255,0.08);">
+                  <p style="margin:0;font-size:11px;color:rgba(255,255,255,0.3);line-height:1.8;text-align:center;">
+                    © ${year} ${storeName}. All rights reserved.<br/>
+                    This is an automated email — please do not reply directly.<br/>
+                    <a href="${storeUrl}/unsubscribe" style="color:rgba(255,255,255,0.3);text-decoration:underline;">Unsubscribe</a> · <a href="${storeUrl}/privacy" style="color:rgba(255,255,255,0.3);text-decoration:underline;">Privacy Policy</a>
+                  </p>
+                </td>
+              </tr>
+            </table>
           </td>
         </tr>
 
-        <!-- ── Footer ── -->
-        <tr>
-          <td style="padding:20px 40px;text-align:center;">
-            <p style="margin:0;font-size:12px;color:#aaa;line-height:1.8;">
-              © ${year} ${storeName}. All rights reserved.<br/>
-              This is an automated email — please do not reply directly.
-            </p>
-          </td>
-        </tr>
+        <!-- Bottom spacing -->
+        <tr><td style="height:40px;"></td></tr>
 
       </table>
-    </td></tr>
-  </table>
+    </td>
+  </tr>
+</table>
 
 </body>
 </html>`;

@@ -23,8 +23,19 @@ import { globalErrorHandler, notFoundHandler } from './middlewares/errorHandler.
 import mongoose from 'mongoose';
 
 const app = express();
-app.use(cors());
-app.options('*', cors())
+app.use(cors({
+  origin: [
+    "http://localhost:5173",   // local dev
+    "http://localhost:3000",   // local dev alternate
+    "https://zeedaddy.in",     // production frontend
+  ],
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+}));
+app.options('*', cors({
+  origin: ["http://localhost:5173", "http://localhost:3000", "https://zeedaddy.in"],
+  credentials: true,
+}));
 
 app.use(requestContext)
 

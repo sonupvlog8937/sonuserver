@@ -5,7 +5,7 @@ import upload from '../middlewares/multer.js';
 
 const userRouter = Router()
 userRouter.post('/register',registerUserController)
-userRouter.post('/verifyEmail',verifyEmailController)
+userRouter.post('/verify-email', verifyEmailController)
 userRouter.post('/resend-otp',resendOtpController)
 userRouter.post('/login',loginUserController)
 userRouter.post('/authWithGoogle',authWithGoogle)

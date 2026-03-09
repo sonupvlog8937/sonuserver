@@ -37,7 +37,7 @@ const queueOrderConfirmationEmail = async (userId, order) => {
             return;
         }
 
-        const storeName = process.env.STORE_NAME || 'MyStore';
+        const storeName = process.env.STORE_NAME || 'Zeedaddy';
 
         const sent = await sendEmailFun({
             sendTo: user.email,

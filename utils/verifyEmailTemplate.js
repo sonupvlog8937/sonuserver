@@ -7,7 +7,7 @@
  * @returns {string}         - HTML string
  */
 const VerificationEmail = (username, otp) => {
-    const storeName  = process.env.STORE_NAME  || 'MyStore';
+    const storeName  = process.env.STORE_NAME  || 'Zeedaddy';
     const storeColor = process.env.STORE_COLOR || '#4CAF50';
     const year       = new Date().getFullYear();
 

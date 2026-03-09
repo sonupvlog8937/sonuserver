@@ -16,7 +16,7 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 const sendEmailFun = async ({ sendTo, subject, text = '', html }) => {
     try {
         const { data, error } = await resend.emails.send({
-            from: `${process.env.STORE_NAME || 'MyStore'} <onboarding@resend.dev>`,
+            from: `${process.env.STORE_NAME || 'Zeedaddy'} <noreply@zeedaddy.in>`,
             // ↑ Resend free plan mein apna domain verify karne tak onboarding@resend.dev use karo
             // Custom domain baad mein: noreply@yourdomain.com
             to: Array.isArray(sendTo) ? sendTo : [sendTo],
