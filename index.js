@@ -23,16 +23,27 @@ import { globalErrorHandler, notFoundHandler } from './middlewares/errorHandler.
 import mongoose from 'mongoose';
 
 const app = express();
+const allowedOrigins = [
+  "https://www.zeedaddy.in",  // production (www)
+  "https://zeedaddy.in",      // production (non-www)
+  "http://localhost:5173",    // local dev
+];
+
 app.use(cors({
-  origin: [
-    "https://www.zeedaddy.in",   // local dev
-    "http://localhost:5173",    // production frontend
-  ],
+  origin: (origin, callback) => {
+    // Allow requests with no origin (Postman, mobile apps, server-to-server)
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error(`CORS blocked: ${origin}`));
+    }
+  },
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
 }));
 app.options('*', cors({
-  origin: ["https://www.zeedaddy.in", "https://zeedaddy.in"],
+  origin: allowedOrigins,
   credentials: true,
 }));
 
