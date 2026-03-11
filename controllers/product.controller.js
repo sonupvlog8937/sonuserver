@@ -356,6 +356,7 @@ export async function createProduct(request, response) {
       sale: request.body.sale || 0,
       colorOptions: request.body.colorOptions || [],
       specifications: request.body.specifications || [],
+      seller: request.userId,
     });
 
     product = await product.save();
@@ -397,6 +398,7 @@ export async function getAllProducts(request, response) {
     const total = await ProductModel.countDocuments();
 
     const products = await ProductModel.find()
+    .populate("seller", "name email role status storeProfile")
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit);
@@ -435,6 +437,7 @@ export async function getAllProductsByCatId(request, response) {
 
     const products = await ProductModel.find({ catId: request.params.id })
       .populate("category")
+       .populate("seller", "name email role status storeProfile")
       .skip((page - 1) * perPage)
       .limit(perPage)
       .exec();
@@ -477,6 +480,7 @@ export async function getAllProductsByCatName(request, response) {
       catName: request.query.catName,
     })
       .populate("category")
+      .populate("seller", "name email role status storeProfile")
       .skip((page - 1) * perPage)
       .limit(perPage)
       .exec();
@@ -517,6 +521,7 @@ export async function getAllProductsBySubCatId(request, response) {
 
     const products = await ProductModel.find({ subCatId: request.params.id })
       .populate("category")
+      .populate("seller", "name email role status storeProfile")
       .skip((page - 1) * perPage)
       .limit(perPage)
       .exec();
@@ -559,6 +564,7 @@ export async function getAllProductsBySubCatName(request, response) {
       subCat: request.query.subCat,
     })
       .populate("category")
+      .populate("seller", "name email role status storeProfile")
       .skip((page - 1) * perPage)
       .limit(perPage)
       .exec();
@@ -598,6 +604,7 @@ export async function getAllProductsByThirdLavelCatId(request, response) {
 
     const products = await ProductModel.find({ thirdsubCatId: request.params.id })
       .populate("category")
+       .populate("seller", "name email role status storeProfile")
       .skip((page - 1) * perPage)
       .limit(perPage)
       .exec();
@@ -791,6 +798,121 @@ export async function getAllProductsByRating(request, response) {
       products: products,
       totalPages: totalPages,
       page: page,
+    });
+  } catch (error) {
+    return response.status(500).json({
+      message: error.message || error,
+      error: true,
+      success: false,
+    });
+  }
+}
+
+export async function getProductsBySellerPublic(request, response) {
+  try {
+
+    const sellerId = request.params.sellerId;
+    const page = Math.max(parseInt(request.query.page) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(request.query.limit) || 12, 1), 60);
+    const sortBy = request.query.sortBy || "latest";
+    const minPrice = Number(request.query.minPrice || 0);
+    const maxPrice = Number(request.query.maxPrice || 0);
+    const catId = request.query.catId;
+    const search = String(request.query.search || "").trim();
+
+    const query = { seller: sellerId };
+    if (catId) query.catId = catId;
+    if (search) {
+      const escapedSearch = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const searchRegex = new RegExp(escapedSearch, "i");
+      query.$or = [
+        { name: searchRegex },
+        { brand: searchRegex },
+        { description: searchRegex },
+        { catName: searchRegex },
+        { subCat: searchRegex },
+        { thirdsubCat: searchRegex },
+      ];
+    }
+
+    if (minPrice > 0 || maxPrice > 0) {
+      query.price = {};
+      if (minPrice > 0) query.price.$gte = minPrice;
+      if (maxPrice > 0) query.price.$lte = maxPrice;
+    }
+
+    const sortMap = {
+      latest: { createdAt: -1 },
+      oldest: { createdAt: 1 },
+      priceLowToHigh: { price: 1 },
+      priceHighToLow: { price: -1 },
+      popularity: { sale: -1, createdAt: -1 },
+      rating: { rating: -1, createdAt: -1 },
+      nameAZ: { name: 1 },
+      nameZA: { name: -1 },
+    };
+
+    const sortOption = sortMap[sortBy] || sortMap.latest;
+
+    const [products, total, categoryFacets] = await Promise.all([
+      ProductModel.find(query)
+        .populate("seller", "name email role status storeProfile")
+        .sort(sortOption)
+        .skip((page - 1) * limit)
+        .limit(limit),
+      ProductModel.countDocuments(query),
+      ProductModel.aggregate([
+        { $match: { seller: sellerId } },
+        {
+          $group: {
+            _id: "$catId",
+            name: { $first: "$catName" },
+            total: { $sum: 1 },
+          },
+        },
+        { $sort: { total: -1 } },
+      ]),
+    ]);
+
+    const categories = (categoryFacets || [])
+      .filter((item) => item?._id)
+      .map((item) => ({
+        _id: String(item._id),
+        name: item.name || "Uncategorized",
+        total: item.total || 0,
+      }));
+
+    return response.status(200).json({
+      error: false,
+      success: true,
+      products,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+      hasMore: page * limit < total,
+      categories,
+    });
+  } catch (error) {
+    return response.status(500).json({
+      message: error.message || error,
+      error: true,
+      success: false,
+    });
+  }
+}
+
+export async function getSellerProducts(request, response) {
+  try {
+    const products = await ProductModel.find({ seller: request.userId })
+      .sort({ createdAt: -1 })
+      .populate("seller", "name email role status storeProfile");
+
+    return response.status(200).json({
+      error: false,
+      success: true,
+      products,
+      total: products.length,
     });
   } catch (error) {
     return response.status(500).json({
@@ -1036,6 +1158,26 @@ export async function removeImageFromCloudinary(request, response) {
 //updated product
 export async function updateProduct(request, response) {
   try {
+    const existingProduct = await ProductModel.findById(request.params.id);
+
+    if (!existingProduct) {
+      return response.status(404).json({
+        error: true,
+        success: false,
+        message: "Product not found",
+      });
+    }
+
+    if (
+      request.currentUser?.role === "SELLER" &&
+      existingProduct.seller?.toString() !== request.userId
+    ) {
+      return response.status(403).json({
+        error: true,
+        success: false,
+        message: "You can update only your products",
+      });
+    }
     const product = await ProductModel.findByIdAndUpdate(
       request.params.id,
       {
