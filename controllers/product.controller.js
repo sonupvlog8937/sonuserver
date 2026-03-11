@@ -1,3 +1,4 @@
+import ReviewModel from "../models/reviews.model.js";
 import ProductModel from "../models/product.modal.js";
 import ProductRAMSModel from "../models/productRAMS.js";
 import ProductWEIGHTModel from "../models/productWEIGHT.js";
@@ -2355,5 +2356,138 @@ export async function getSellerDashboardStats(request, response) {
       error: true,
       success: false,
     });
+  }
+}
+// ═══════════════════════════════════════════════════════════════════════════════
+// REVIEW CONTROLLERS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// POST /api/product/reviews/add  — Add a new review
+export async function addReview(request, response) {
+  try {
+    const { image, userName, review, rating, productId } = request.body;
+    const userId = request.userId; // auth middleware se aayega
+
+    if (!review || !review.trim()) {
+      return response.status(400).json({ error: true, message: "Review text is required" });
+    }
+    if (!productId) {
+      return response.status(400).json({ error: true, message: "productId is required" });
+    }
+    if (!userId) {
+      return response.status(400).json({ error: true, message: "userId is required" });
+    }
+
+    const ratingNum = Number(rating);
+    if (isNaN(ratingNum) || ratingNum < 1 || ratingNum > 5) {
+      return response.status(400).json({ error: true, message: "Rating must be 1–5" });
+    }
+
+    // One review per user per product
+    const existing = await ReviewModel.findOne({ userId, productId });
+    if (existing) {
+      return response.status(409).json({ error: true, message: "You have already reviewed this product" });
+    }
+
+    const newReview = await ReviewModel.create({
+      image:     image     || "",
+      userName:  userName  || "Anonymous",
+      review:    review.trim(),
+      rating:    String(ratingNum),
+      userId,
+      productId,
+    });
+
+    // Update product's average rating
+    const allReviews = await ReviewModel.find({ productId });
+    const avgRating  = allReviews.reduce((s, r) => s + (Number(r.rating) || 0), 0) / allReviews.length;
+    await ProductModel.findByIdAndUpdate(productId, { rating: parseFloat(avgRating.toFixed(1)) });
+
+    return response.status(201).json({
+      error:   false,
+      success: true,
+      message: "Review added successfully",
+      review:  newReview,
+    });
+  } catch (error) {
+    return response.status(500).json({ error: true, message: error.message || error });
+  }
+}
+
+// GET /api/product/reviews/:productId  — Get paginated reviews for a product
+export async function getProductReviews(request, response) {
+  try {
+    const { productId } = request.params;
+    const page  = Math.max(1, parseInt(request.query.page)  || 1);
+    const limit = Math.min(20, parseInt(request.query.limit) || 5);
+    const sort  = request.query.sort || "NEWEST";
+
+    if (!productId) {
+      return response.status(400).json({ error: true, message: "productId is required" });
+    }
+
+    const sortMap = {
+      NEWEST:  { createdAt: -1 },
+      OLDEST:  { createdAt:  1 },
+      HIGHEST: { rating:    -1 },
+      LOWEST:  { rating:     1 },
+    };
+    const sortObj = sortMap[sort] || sortMap.NEWEST;
+
+    const total   = await ReviewModel.countDocuments({ productId });
+    const reviews = await ReviewModel.find({ productId })
+      .sort(sortObj)
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .lean();
+
+    // Stats — always full product, not just current page
+    const allReviews = await ReviewModel.find({ productId }).lean();
+    const breakdown  = { "1": 0, "2": 0, "3": 0, "4": 0, "5": 0 };
+    let ratingSum = 0;
+    allReviews.forEach((r) => {
+      const n = String(Math.round(Number(r.rating) || 0));
+      if (breakdown[n] !== undefined) breakdown[n]++;
+      ratingSum += Number(r.rating) || 0;
+    });
+    const avgRating = total > 0 ? (ratingSum / total).toFixed(1) : "0.0";
+
+    return response.status(200).json({
+      error:      false,
+      success:    true,
+      reviews,
+      total,
+      avgRating,
+      breakdown,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+      hasMore:    page * limit < total,
+    });
+  } catch (error) {
+    return response.status(500).json({ error: true, message: error.message || error });
+  }
+}
+
+// DELETE /api/product/reviews/:id  — Delete a review (admin only)
+export async function deleteReview(request, response) {
+  try {
+    const deleted = await ReviewModel.findByIdAndDelete(request.params.id);
+    if (!deleted) {
+      return response.status(404).json({ error: true, message: "Review not found" });
+    }
+
+    // Recalculate product rating after deletion
+    const allReviews = await ReviewModel.find({ productId: deleted.productId });
+    const avgRating  = allReviews.length
+      ? allReviews.reduce((s, r) => s + (Number(r.rating) || 0), 0) / allReviews.length
+      : 0;
+    await ProductModel.findByIdAndUpdate(deleted.productId, {
+      rating: parseFloat(avgRating.toFixed(1)),
+    });
+
+    return response.status(200).json({ error: false, success: true, message: "Review deleted" });
+  } catch (error) {
+    return response.status(500).json({ error: true, message: error.message || error });
   }
 }
