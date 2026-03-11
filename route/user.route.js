@@ -33,6 +33,7 @@ userRouter.put('/seller/store-profile',auth,authorizeRole('SELLER'),upsertSeller
 userRouter.get('/seller/store-profile',auth,authorizeRole('SELLER'),getSellerStoreProfile);
 userRouter.get('/seller/store-profile/:sellerId',getSellerStoreProfile);
 userRouter.get('/wallet/overview',auth,authorizeRole('ADMIN','SELLER'),getCommissionOverview);
+userRouter.get('/seller/commission',auth,authorizeRole('SELLER'),getCommissionOverview);
 userRouter.post('/wallet/request',auth,authorizeRole('SELLER'),createWalletRequest);
 userRouter.put('/wallet/request/approve',auth,authorizeRole('ADMIN'),approveWalletRequest);
 

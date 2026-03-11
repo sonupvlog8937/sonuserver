@@ -2,7 +2,7 @@ import { Router } from 'express'
 import auth from '../middlewares/auth.js';
 import upload from '../middlewares/multer.js';
 import authorizeRole from '../middlewares/authorizeRole.js';
-import {createProduct, createProductRAMS, deleteMultipleProduct, deleteProduct, deleteProductRAMS, getAllFeaturedProducts, getAllProducts, getAllProductsByCatId, getAllProductsByCatName, getAllProductsByPrice, getAllProductsByRating, getAllProductsBySubCatId, getAllProductsBySubCatName, getAllProductsByThirdLavelCatId, getProduct, getProductRams, getProductsCount, updateProduct, updateProductRam, uploadImages, getProductRamsById, createProductWEIGHT, deleteProductWEIGHT, updateProductWeight, getProductWeight, getProductWeightById, createProductSize, deleteProductSize, updateProductSize, getProductSize, getProductSizeById, uploadBannerImages, getAllProductsBanners, filters, sortBy, searchProductController, getSellerProducts, getProductsBySellerPublic} from '../controllers/product.controller.js';
+import {createProduct, createProductRAMS, deleteMultipleProduct, deleteProduct, deleteProductRAMS, getAllFeaturedProducts, getAllProducts, getAllProductsByCatId, getAllProductsByCatName, getAllProductsByPrice, getAllProductsByRating, getAllProductsBySubCatId, getAllProductsBySubCatName, getAllProductsByThirdLavelCatId, getProduct, getProductRams, getProductsCount, updateProduct, updateProductRam, uploadImages, getProductRamsById, createProductWEIGHT, deleteProductWEIGHT, updateProductWeight, getProductWeight, getProductWeightById, createProductSize, deleteProductSize, updateProductSize, getProductSize, getProductSizeById, uploadBannerImages, getAllProductsBanners, filters, sortBy, searchProductController, getSellerProducts, getProductsBySellerPublic, getSellerDashboardStats} from '../controllers/product.controller.js';
 import {removeImageFromCloudinary} from '../controllers/category.controller.js';
 
 const productRouter = Router();
@@ -52,6 +52,7 @@ productRouter.post('/sortBy',sortBy);
 productRouter.post('/search/get',searchProductController);
 productRouter.get('/seller/products',auth,authorizeRole('SELLER'),getSellerProducts);
 productRouter.get('/store/:sellerId',getProductsBySellerPublic);
+productRouter.get('/seller/dashboard-stats',auth,authorizeRole('SELLER'),getSellerDashboardStats);
 
 
 export default productRouter;

@@ -2,10 +2,10 @@ import ProductModel from "../models/product.modal.js";
 import ProductRAMSModel from "../models/productRAMS.js";
 import ProductWEIGHTModel from "../models/productWEIGHT.js";
 import ProductSIZEModel from "../models/productSIZE.js";
-import mongoose from "mongoose";
 
 import { v2 as cloudinary } from "cloudinary";
 import fs from "fs";
+import mongoose from "mongoose";
 
 const normalizeKeywords = (keywords) => {
   if (Array.isArray(keywords)) {
@@ -812,16 +812,7 @@ export async function getAllProductsByRating(request, response) {
 export async function getProductsBySellerPublic(request, response) {
   try {
 
-    const sellerIdRaw = request.params.sellerId;
-
-    // FIX: Convert string to ObjectId — MongoDB seller field is ObjectId type
-    let sellerId;
-    try {
-      sellerId = new mongoose.Types.ObjectId(sellerIdRaw);
-    } catch {
-      return response.status(400).json({ error: true, success: false, message: "Invalid seller ID format" });
-    }
-
+    const sellerId = request.params.sellerId;
     const page = Math.max(parseInt(request.query.page) || 1, 1);
     const limit = Math.min(Math.max(parseInt(request.query.limit) || 12, 1), 60);
     const sortBy = request.query.sortBy || "latest";
@@ -2242,6 +2233,122 @@ export async function searchProductController(request, response) {
       aiInsights: buildAiSearchInsights(paginatedProducts, correctedQuery),
       filterOptions,
     });
+  } catch (error) {
+    return response.status(500).json({
+      message: error.message || error,
+      error: true,
+      success: false,
+    });
+  }
+}
+
+// ─── Seller Dashboard Stats ───────────────────────────────────────────────────
+// GET /api/product/seller/dashboard-stats
+// Requires auth middleware — request.userId must be the seller's _id
+export async function getSellerDashboardStats(request, response) {
+  try {
+    const sellerIdRaw = request.userId;
+
+    let sellerId;
+    try {
+      sellerId = new mongoose.Types.ObjectId(sellerIdRaw);
+    } catch {
+      return response.status(400).json({ error: true, success: false, message: "Invalid seller ID" });
+    }
+
+    // 1. Total products this seller has listed
+    const totalProducts = await ProductModel.countDocuments({ seller: sellerId });
+
+    // 2. Dynamically import OrderModel to avoid circular deps
+    //    Adjust path to match your project's order model location
+    let OrderModel;
+    try {
+      const mod = await import("../models/order.model.js");
+      OrderModel = mod.default;
+    } catch {
+      // Fallback: try alternate common path
+      try {
+        const mod = await import("../models/orders.model.js");
+        OrderModel = mod.default;
+      } catch {
+        // Order model not found — return products only
+        return response.status(200).json({
+          error: false,
+          success: true,
+          totalProducts,
+          totalOrders: 0,
+          confirmedOrders: 0,
+          deliveredOrders: 0,
+          pendingOrders: 0,
+          shippedOrders: 0,
+          cancelledOrders: 0,
+          totalEarning: 0,
+          pendingEarning: 0,
+          _note: "Order model not found — only product count available",
+        });
+      }
+    }
+
+    // 3. Get all orders that contain at least one product from this seller
+    //    Supports two common order schemas:
+    //      a) order.products[].seller  (product-level seller ref)
+    //      b) order.sellerId           (order-level seller ref)
+    const [orderAgg] = await OrderModel.aggregate([
+      {
+        $match: {
+          $or: [
+            { "products.seller": sellerId },
+            { sellerId: sellerId },
+          ],
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          totalOrders:     { $sum: 1 },
+          confirmedOrders: { $sum: { $cond: [{ $eq: [{ $toLower: "$order_status" }, "confirmed"] }, 1, 0] } },
+          deliveredOrders: { $sum: { $cond: [{ $eq: [{ $toLower: "$order_status" }, "delivered"] }, 1, 0] } },
+          pendingOrders:   { $sum: { $cond: [{ $eq: [{ $toLower: "$order_status" }, "pending"]   }, 1, 0] } },
+          shippedOrders:   { $sum: { $cond: [{ $eq: [{ $toLower: "$order_status" }, "shipped"]   }, 1, 0] } },
+          cancelledOrders: { $sum: { $cond: [{ $eq: [{ $toLower: "$order_status" }, "cancelled"] }, 1, 0] } },
+          // Total earning = sum of totalAmt for delivered orders
+          totalEarning:    {
+            $sum: {
+              $cond: [
+                { $eq: [{ $toLower: "$order_status" }, "delivered"] },
+                { $ifNull: ["$totalAmt", 0] },
+                0,
+              ],
+            },
+          },
+          // Pending earning = sum of totalAmt for confirmed + shipped (not yet delivered)
+          pendingEarning: {
+            $sum: {
+              $cond: [
+                { $in: [{ $toLower: "$order_status" }, ["confirmed", "shipped"]] },
+                { $ifNull: ["$totalAmt", 0] },
+                0,
+              ],
+            },
+          },
+        },
+      },
+    ]);
+
+    return response.status(200).json({
+      error: false,
+      success: true,
+      totalProducts,
+      totalOrders:     orderAgg?.totalOrders     || 0,
+      confirmedOrders: orderAgg?.confirmedOrders || 0,
+      deliveredOrders: orderAgg?.deliveredOrders || 0,
+      pendingOrders:   orderAgg?.pendingOrders   || 0,
+      shippedOrders:   orderAgg?.shippedOrders   || 0,
+      cancelledOrders: orderAgg?.cancelledOrders || 0,
+      totalEarning:    orderAgg?.totalEarning    || 0,
+      pendingEarning:  orderAgg?.pendingEarning  || 0,
+    });
+
   } catch (error) {
     return response.status(500).json({
       message: error.message || error,
