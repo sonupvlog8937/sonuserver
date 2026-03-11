@@ -2,6 +2,7 @@ import ProductModel from "../models/product.modal.js";
 import ProductRAMSModel from "../models/productRAMS.js";
 import ProductWEIGHTModel from "../models/productWEIGHT.js";
 import ProductSIZEModel from "../models/productSIZE.js";
+import mongoose from "mongoose";
 
 import { v2 as cloudinary } from "cloudinary";
 import fs from "fs";
@@ -811,7 +812,16 @@ export async function getAllProductsByRating(request, response) {
 export async function getProductsBySellerPublic(request, response) {
   try {
 
-    const sellerId = request.params.sellerId;
+    const sellerIdRaw = request.params.sellerId;
+
+    // FIX: Convert string to ObjectId — MongoDB seller field is ObjectId type
+    let sellerId;
+    try {
+      sellerId = new mongoose.Types.ObjectId(sellerIdRaw);
+    } catch {
+      return response.status(400).json({ error: true, success: false, message: "Invalid seller ID format" });
+    }
+
     const page = Math.max(parseInt(request.query.page) || 1, 1);
     const limit = Math.min(Math.max(parseInt(request.query.limit) || 12, 1), 60);
     const sortBy = request.query.sortBy || "latest";
