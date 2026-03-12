@@ -24,7 +24,7 @@ userRouter.post('/create-seller',auth,authorizeRole('ADMIN'),createSellerByAdmin
 userRouter.put('/admin/user-access',auth,authorizeRole('ADMIN'),updateUserAccessByAdminController);
 userRouter.post('/addReview',auth,addReview);
 userRouter.get('/getReviews',getReviews);
-userRouter.get('/getAllReviews',getAllReviews);
+userRouter.get('/getAllReviews',auth,authorizeRole('ADMIN','SELLER'),getAllReviews);
 userRouter.get('/getAllUsers',auth,authorizeRole('ADMIN'),getAllUsers);
 userRouter.delete('/deleteMultiple',auth,authorizeRole('ADMIN'),deleteMultiple);
 userRouter.delete('/deleteUser/:id',auth,authorizeRole('ADMIN'),deleteUser);
