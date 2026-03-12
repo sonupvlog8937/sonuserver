@@ -812,18 +812,31 @@ export async function getAllProductsByRating(request, response) {
 
 export async function getProductsBySellerPublic(request, response) {
   try {
-
     const sellerId = request.params.sellerId;
-    const page = Math.max(parseInt(request.query.page) || 1, 1);
+    const page  = Math.max(parseInt(request.query.page)  || 1, 1);
     const limit = Math.min(Math.max(parseInt(request.query.limit) || 12, 1), 60);
-    const sortBy = request.query.sortBy || "latest";
-    const minPrice = Number(request.query.minPrice || 0);
-    const maxPrice = Number(request.query.maxPrice || 0);
-    const catId = request.query.catId;
-    const search = String(request.query.search || "").trim();
+    const sortBy     = request.query.sortBy    || "latest";
+    const minPrice   = Number(request.query.minPrice   || 0);
+    const maxPrice   = Number(request.query.maxPrice   || 0);
+    const minRating  = Number(request.query.minRating  || 0);
+    const catId      = request.query.catId      || "";
+    const search     = String(request.query.search     || "").trim();
+    const stockStatus = request.query.stockStatus || ""; // "inStock" | "outOfStock"
+    const saleOnly   = request.query.saleOnly === "true";
 
+    // Multi-value params (comma-separated)
+    const brands     = request.query.brands    ? String(request.query.brands).split(",").map(s => s.trim()).filter(Boolean)  : [];
+    const colors     = request.query.colors    ? String(request.query.colors).split(",").map(s => s.trim()).filter(Boolean)  : [];
+    const sizes      = request.query.sizes     ? String(request.query.sizes).split(",").map(s => s.trim()).filter(Boolean)   : [];
+    const ramOptions = request.query.ramOptions ? String(request.query.ramOptions).split(",").map(s => s.trim()).filter(Boolean) : [];
+    const weights    = request.query.weights   ? String(request.query.weights).split(",").map(s => s.trim()).filter(Boolean) : [];
+    const discountMin = Number(request.query.discountMin || 0);
+
+    // Build mongo query
     const query = { seller: sellerId };
+
     if (catId) query.catId = catId;
+
     if (search) {
       const escapedSearch = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       const searchRegex = new RegExp(escapedSearch, "i");
@@ -843,20 +856,33 @@ export async function getProductsBySellerPublic(request, response) {
       if (maxPrice > 0) query.price.$lte = maxPrice;
     }
 
-    const sortMap = {
-      latest: { createdAt: -1 },
-      oldest: { createdAt: 1 },
-      priceLowToHigh: { price: 1 },
-      priceHighToLow: { price: -1 },
-      popularity: { sale: -1, createdAt: -1 },
-      rating: { rating: -1, createdAt: -1 },
-      nameAZ: { name: 1 },
-      nameZA: { name: -1 },
-    };
+    if (minRating > 0) query.rating = { $gte: minRating };
+    if (brands.length)     query.brand = { $in: brands };
+    if (colors.length)     query["colorOptions.name"] = { $in: colors };
+    if (sizes.length)      query.size = { $in: sizes };
+    if (ramOptions.length) query.productRam = { $in: ramOptions };
+    if (weights.length)    query.productWeight = { $in: weights };
+    if (saleOnly)          query.discount = { $gt: 0 };
+    if (discountMin > 0)   query.discount = { ...(query.discount || {}), $gte: discountMin };
 
+    if (stockStatus === "inStock")    query.countInStock = { $gt: 0 };
+    if (stockStatus === "outOfStock") query.countInStock = { $lte: 0 };
+
+    const sortMap = {
+      latest:         { createdAt: -1 },
+      oldest:         { createdAt:  1 },
+      priceLowToHigh: { price:  1 },
+      priceHighToLow: { price: -1 },
+      popularity:     { sale: -1, createdAt: -1 },
+      rating:         { rating: -1, createdAt: -1 },
+      nameAZ:         { name:  1 },
+      nameZA:         { name: -1 },
+      discount:       { discount: -1 },
+    };
     const sortOption = sortMap[sortBy] || sortMap.latest;
 
-    const [products, total, categoryFacets] = await Promise.all([
+    // Run all queries in parallel
+    const [products, total, categoryFacets, filterOptionsRaw] = await Promise.all([
       ProductModel.find(query)
         .populate("seller", "name email role status storeProfile")
         .sort(sortOption)
@@ -865,24 +891,40 @@ export async function getProductsBySellerPublic(request, response) {
       ProductModel.countDocuments(query),
       ProductModel.aggregate([
         { $match: { seller: sellerId } },
-        {
-          $group: {
-            _id: "$catId",
-            name: { $first: "$catName" },
-            total: { $sum: 1 },
-          },
-        },
+        { $group: { _id: "$catId", name: { $first: "$catName" }, total: { $sum: 1 } } },
         { $sort: { total: -1 } },
       ]),
+      // filterOptions always from ALL seller products (not filtered) so options stay stable
+      ProductModel.find({ seller: sellerId })
+        .select("brand size productWeight productRam colorOptions.name discount countInStock rating")
+        .lean(),
     ]);
 
     const categories = (categoryFacets || [])
       .filter((item) => item?._id)
-      .map((item) => ({
-        _id: String(item._id),
-        name: item.name || "Uncategorized",
-        total: item.total || 0,
-      }));
+      .map((item) => ({ _id: String(item._id), name: item.name || "Uncategorized", total: item.total || 0 }));
+
+    const filterOptions = {
+      brands:     [...new Set(filterOptionsRaw.map(i => i?.brand?.trim()).filter(Boolean))].sort(),
+      sizes:      [...new Set(filterOptionsRaw.flatMap(i => i?.size || []).filter(Boolean))].sort(),
+      colors:     [...new Set(filterOptionsRaw.flatMap(i => (i?.colorOptions || []).map(c => c?.name)).filter(Boolean))].sort(),
+      ramOptions: [...new Set(filterOptionsRaw.flatMap(i => i?.productRam || []).filter(Boolean))].sort(),
+      weights:    [...new Set(filterOptionsRaw.flatMap(i => i?.productWeight || []).filter(Boolean))].sort(),
+      hasDiscount: filterOptionsRaw.some(i => (i?.discount || 0) > 0),
+      hasOutOfStock: filterOptionsRaw.some(i => (i?.countInStock || 0) <= 0),
+    };
+
+    // Rating stats
+    const ratingList = filterOptionsRaw.map(i => Number(i?.rating) || 0).filter(r => r > 0);
+    const ratingStats = {
+      avg: ratingList.length ? parseFloat((ratingList.reduce((s, r) => s + r, 0) / ratingList.length).toFixed(1)) : 0,
+      totalReviews: ratingList.length,
+      breakdown: ratingList.reduce((acc, r) => {
+        const key = Math.round(r);
+        acc[key] = (acc[key] || 0) + 1;
+        return acc;
+      }, {}),
+    };
 
     return response.status(200).json({
       error: false,
@@ -894,6 +936,8 @@ export async function getProductsBySellerPublic(request, response) {
       totalPages: Math.ceil(total / limit),
       hasMore: page * limit < total,
       categories,
+      filterOptions,
+      ratingStats,
     });
   } catch (error) {
     return response.status(500).json({
