@@ -21,6 +21,9 @@ import logoRouter from './route/logo.route.js';
 import { requestContext } from './middlewares/requestContext.js';
 import { globalErrorHandler, notFoundHandler } from './middlewares/errorHandler.js';
 import mongoose from 'mongoose';
+import notificationRouter from './route/notification.route.js';
+import couponRouter from './route/coupon.route.js';
+import notificationSettingRouter from './route/notificationSetting.route.js';
 
 const app = express();
 const allowedOrigins = [
@@ -100,6 +103,9 @@ app.use("/api/bannerList2",bannerList2Router)
 app.use("/api/blog",blogRouter)
 app.use("/api/order",orderRouter)
 app.use("/api/logo",logoRouter)
+app.use("/api/notifications",notificationRouter)
+app.use("/api/coupon",couponRouter)
+app.use("/api/notification-settings",notificationSettingRouter)
 
 app.use(notFoundHandler)
 app.use(globalErrorHandler)

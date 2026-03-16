@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import {addReview, approveWalletRequest, authWithGoogle, changePasswordController, createSellerByAdminController, createWalletRequest, deleteMultiple, deleteUser, forgotPasswordController, getAllReviews, getAllUsers, getCommissionOverview, getReviews, getSellerStoreProfile, loginUserController, logoutController, refreshToken, registerUserController, removeImageFromCloudinary, resetpassword, resendOtpController, updateUserAccessByAdminController, updateUserDetails, upsertSellerStoreProfile, userAvatarController, userDetails, verifyEmailController, verifyForgotPasswordOtp, registerSellerController} from '../controllers/user.controller.js';
+import {addReview, approveWalletRequest, authWithGoogle, changePasswordController, createSellerByAdminController, createWalletRequest, deleteMultiple, deleteUser, forgotPasswordController, getAllReviews, getAllUsers, getCommissionOverview, getReviews, getSellerStoreProfile, loginUserController, sendPhoneLoginOtpController, verifyPhoneLoginOtpController, logoutController, refreshToken, registerUserController, removeImageFromCloudinary, resetpassword, resendOtpController, updateUserAccessByAdminController, updateUserDetails, upsertSellerStoreProfile, userAvatarController, userDetails, verifyEmailController, verifyForgotPasswordOtp, registerSellerController} from '../controllers/user.controller.js';
 import upload from '../middlewares/multer.js';
 import auth from '../middlewares/auth.js';
 import authorizeRole from '../middlewares/authorizeRole.js';
@@ -9,6 +9,8 @@ userRouter.post('/register',registerUserController)
 userRouter.post('/verify-email', verifyEmailController)
 userRouter.post('/resend-otp',resendOtpController)
 userRouter.post('/login',loginUserController)
+userRouter.post('/login-phone-otp/send',sendPhoneLoginOtpController)
+userRouter.post('/login-phone-otp/verify',verifyPhoneLoginOtpController)
 userRouter.post('/authWithGoogle',authWithGoogle)
 userRouter.get('/logout',auth,logoutController);
 userRouter.put('/user-avatar',auth,upload.array('avatar'),userAvatarController);
