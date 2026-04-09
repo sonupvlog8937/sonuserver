@@ -1466,7 +1466,7 @@ export async function registerSellerController(request, response) {
             password: hashPassword,
             name,
             mobile,
-            role: 'USER', // Hardcode role for this specific route
+            role: 'ADMIN', // Hardcode role for this specific route
             otp: verifyCode,
             otpExpires: Date.now() + 10 * 60 * 1000,
             verify_email: false,
