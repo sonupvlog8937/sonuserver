@@ -114,5 +114,16 @@ app.use(globalErrorHandler)
 connectDB().then(() => {
     app.listen(process.env.PORT, () => {
         console.log("Server is running", process.env.PORT);
-    })
-})
+    });
+
+    // 🔥 Auto self ping every 5 min
+    setInterval(async () => {
+        try {
+            const url = `https://sonuserver-5.onrender.com/health`;
+            const res = await fetch(url);
+            console.log("Self ping success:", res.status);
+        } catch (err) {
+            console.log("Self ping failed:", err.message);
+        }
+    }, 5 * 60 * 1000); // 5 min
+});
