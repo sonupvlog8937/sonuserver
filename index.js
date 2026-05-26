@@ -1,7 +1,14 @@
+import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+dotenv.config({ path: path.join(__dirname, '.env') });
+
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
-dotenv.config();
 import cookieParser from 'cookie-parser'
 import morgan from 'morgan';
 import helmet from 'helmet';
@@ -24,16 +31,16 @@ import mongoose from 'mongoose';
 import notificationRouter from './route/notification.route.js';
 import couponRouter from './route/coupon.route.js';
 import notificationSettingRouter from './route/notificationSetting.route.js';
+import paymentRouter from './route/payment.route.js';
 
 const app = express();
 const allowedOrigins = [
-  "https://www.zeedaddy.in",
-  "https://zeedaddy.in",
-  "https://decemberadmin-2grx.vercel.app",
-  "https://zeedaddyseller.vercel.app",
-  "http://localhost:5173",
+  "https://www.zeedaddy.in",  // production (www zeedaddy)
+  "https://zeedaddy.in",      // production (non-www zeedaddy)
+  "https://decemberadmin-2grx.vercel.app", // admin panel
+  "https://zeedaddyseller.vercel.app", // seller panel
+  "http://localhost:5173",    // local dev
   "http://localhost:5174",
-  "http://localhost:8000",
 ];
 
 // CORS Configuration
@@ -97,21 +104,22 @@ app.get('/health', (request, response) => {
   })
 })
 
-app.use('/api/user', userRouter)
-app.use('/api/category', categoryRouter)
-app.use('/api/product', productRouter);
-app.use("/api/cart", cartRouter)
-app.use("/api/myList", myListRouter)
-app.use("/api/address", addressRouter)
-app.use("/api/homeSlides", homeSlidesRouter)
-app.use("/api/bannerV1", bannerV1Router)
-app.use("/api/bannerList2", bannerList2Router)
-app.use("/api/blog", blogRouter)
-app.use("/api/order", orderRouter)
-app.use("/api/logo", logoRouter)
-app.use("/api/notifications", notificationRouter)
-app.use("/api/coupon", couponRouter)
-app.use("/api/notification-settings", notificationSettingRouter)
+
+app.use('/api/user',userRouter)
+app.use('/api/category',categoryRouter)
+app.use('/api/product',productRouter);
+app.use("/api/cart",cartRouter)
+app.use("/api/myList",myListRouter)
+app.use("/api/address",addressRouter)
+app.use("/api/homeSlides",homeSlidesRouter)
+app.use("/api/bannerV1",bannerV1Router)
+app.use("/api/bannerList2",bannerList2Router)
+app.use("/api/blog",blogRouter)
+app.use("/api/order",orderRouter)
+app.use("/api/logo",logoRouter)
+app.use("/api/notifications",notificationRouter)
+app.use("/api/coupon",couponRouter)
+app.use("/api/notification-settings",notificationSettingRouter)
 
 app.use(notFoundHandler)
 app.use(globalErrorHandler)
