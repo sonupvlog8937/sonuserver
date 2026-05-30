@@ -34,21 +34,30 @@ import notificationSettingRouter from './route/notificationSetting.route.js';
 import paymentRouter from './route/payment.route.js';
 
 const app = express();
+
+// Allowed origins for CORS
 const allowedOrigins = [
-  "https://www.zeedaddy.in",  // production (www zeedaddy)
-  "https://zeedaddy.in",      // production (non-www zeedaddy)
-  "https://decemberadmin-2grx.vercel.app", // admin panel
-  "https://zeedaddyseller.vercel.app", // seller panel
-  "http://localhost:5173",    // local dev
+  "https://www.zeedaddy.in",
+  "https://zeedaddy.in",
+  "https://decemberadmin-2grx.vercel.app",
+  "https://zeedaddyseller.vercel.app",
+  "http://localhost:5173",
   "http://localhost:5174",
+  "http://localhost:8000",
+  "http://localhost:3000",
+  "http://localhost:8081",      // Expo dev server - ADDED
+  "http://127.0.0.1:8081",      // Alternative localhost - ADDED
+  "exp://localhost:8081",
 ];
 
-// CORS Configuration
+// CORS Configuration - Allow React Native/Expo apps (no origin header)
 const corsOptions = {
   origin: (origin, callback) => {
+    // Allow requests with no origin (React Native, Expo, server-to-server)
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
+      console.warn(`CORS blocked for origin: ${origin}`);
       callback(new Error(`CORS blocked: ${origin}`));
     }
   },
@@ -67,15 +76,18 @@ app.use(requestContext);
 // Debug middleware
 app.use((req, res, next) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
-  console.log('Origin:', req.get('origin') || 'no-origin (mobile/server)');
+  console.log('Origin:', req.get('origin') || 'none (mobile/server)');
   next();
 });
 
 app.use(express.json());
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(cookieParser());
+
 if (process.env.NODE_ENV !== 'production') {
   app.use(morgan('dev'));
 }
+
 app.use(helmet({
   crossOriginResourcePolicy: false,
   crossOriginEmbedderPolicy: false,
@@ -83,7 +95,8 @@ app.use(helmet({
 
 app.get("/", (request, response) => {
   response.json({
-    message: "Server is running on port " + process.env.PORT
+    message: "Server is running on port " + process.env.PORT,
+    status: "OK"
   })
 })
 
@@ -104,30 +117,34 @@ app.get('/health', (request, response) => {
   })
 })
 
+// Routes
+app.use('/api/user', userRouter)
+app.use('/api/category', categoryRouter)
+app.use('/api/product', productRouter)
+app.use("/api/cart", cartRouter)
+app.use("/api/myList", myListRouter)
+app.use("/api/address", addressRouter)
+app.use("/api/homeSlides", homeSlidesRouter)
+app.use("/api/bannerV1", bannerV1Router)
+app.use("/api/bannerList2", bannerList2Router)
+app.use("/api/blog", blogRouter)
+app.use("/api/order", orderRouter)
+app.use("/api/logo", logoRouter)
+app.use("/api/notifications", notificationRouter)
+app.use("/api/coupon", couponRouter)
+app.use("/api/notification-settings", notificationSettingRouter)
+app.use("/api/payment", paymentRouter)
 
-app.use('/api/user',userRouter)
-app.use('/api/category',categoryRouter)
-app.use('/api/product',productRouter);
-app.use("/api/cart",cartRouter)
-app.use("/api/myList",myListRouter)
-app.use("/api/address",addressRouter)
-app.use("/api/homeSlides",homeSlidesRouter)
-app.use("/api/bannerV1",bannerV1Router)
-app.use("/api/bannerList2",bannerList2Router)
-app.use("/api/blog",blogRouter)
-app.use("/api/order",orderRouter)
-app.use("/api/logo",logoRouter)
-app.use("/api/notifications",notificationRouter)
-app.use("/api/coupon",couponRouter)
-app.use("/api/notification-settings",notificationSettingRouter)
-
+// Error handlers
 app.use(notFoundHandler)
 app.use(globalErrorHandler)
 
+// Start server
 connectDB().then(() => {
   app.listen(process.env.PORT, () => {
     console.log("✅ Server is running on port", process.env.PORT);
     console.log("🔒 Allowed origins:", allowedOrigins);
+    console.log("📱 React Native/Expo apps - ALLOWED");
   });
 }).catch((err) => {
   console.error("❌ Failed to connect to database:", err.message);
