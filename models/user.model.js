@@ -71,7 +71,7 @@ const userSchema = mongoose.Schema({
     },
     role: {
         type: String,
-        enum: ['ADMIN', 'USER', 'SELLER'],
+        enum: ['ADMIN', 'USER', 'SELLER', 'GROCERY_SELLER', 'RESTAURANT_SELLER', 'DELIVERY_RIDER'],
         default: "USER"
     },
     signUpWithGoogle:{
@@ -90,6 +90,8 @@ const userSchema = mongoose.Schema({
         shippingTime: { type: String, default: "" },
         openHours:    { type: String, default: "" },
         supportEmail: { type: String, default: "" },
+        marketId:     { type: mongoose.Schema.ObjectId, ref: 'Market', default: null },
+        goMarketOwnerId: { type: mongoose.Schema.ObjectId, ref: 'ShopOwner', default: null },
     },
     bankDetails: {
         accountHolderName: { type: String, default: "" },
@@ -108,7 +110,7 @@ const userSchema = mongoose.Schema({
         {
             type: {
                 type: String,
-                enum: ["COMMISSION", "DEPOSIT", "WITHDRAW"],
+                enum: ["COMMISSION", "DEPOSIT", "WITHDRAW", "RIDER_EARNING", "RIDER_PAYOUT", "ADMIN_TRANSFER"],
                 required: true
             },
             amount: { type: Number, required: true },
@@ -122,7 +124,19 @@ const userSchema = mongoose.Schema({
             approvedBy: { type: mongoose.Schema.ObjectId, ref: 'User', default: null },
             createdAt: { type: Date, default: Date.now }
         }
-    ]
+    ],
+    preferredMarketId: {
+        type: mongoose.Schema.ObjectId,
+        ref: 'Market',
+        default: null
+         },
+    riderProfile: {
+        marketId: { type: mongoose.Schema.ObjectId, ref: 'Market', default: null },
+        drivingLicense: { type: String, default: "" },
+        isAvailable: { type: Boolean, default: true },
+        totalDelivered: { type: Number, default: 0 },
+        totalEarnings: { type: Number, default: 0 }
+    }
 },
     { timestamps: true }
 )

@@ -13,6 +13,25 @@ import { v2 as cloudinary } from 'cloudinary';
 import fs from 'fs';
 import ReviewModel from '../models/reviews.model.js';
 import ProductModel from '../models/product.modal.js';
+import Market from '../models/market.model.js';
+import ShopOwner from '../models/shopOwner.model.js';
+import GroceryShop from '../models/groceryShop.model.js';
+import Restaurant from '../models/restaurant.model.js';
+import GroceryProduct from '../models/groceryProduct.model.js';
+import RestaurantItem from '../models/restaurantItem.model.js';
+
+const SELLER_ROLES = ['SELLER', 'GROCERY_SELLER', 'RESTAURANT_SELLER'];
+const ALL_PANEL_ROLES = ['ADMIN', 'USER', ...SELLER_ROLES];
+const PUBLIC_SIGNUP_SELLER_ROLES = ['SELLER', 'GROCERY_SELLER', 'RESTAURANT_SELLER', 'DELIVERY_RIDER'];
+const isSellerRole = (role) => SELLER_ROLES.includes(role);
+const normalizePanelRole = (role, fallback = 'SELLER') => {
+    const normalized = String(role || fallback).trim().toUpperCase();
+    return ALL_PANEL_ROLES.includes(normalized) ? normalized : fallback;
+};
+const normalizePublicSellerRole = (role) => {
+    const normalized = String(role || 'SELLER').trim().toUpperCase();
+    return PUBLIC_SIGNUP_SELLER_ROLES.includes(normalized) ? normalized : 'SELLER';
+};
 
 cloudinary.config({
     cloud_name: process.env.cloudinary_Config_Cloud_Name,
@@ -46,7 +65,80 @@ async function deleteUserAssociatedData(userId) {
     ]);
 }
 
+async function createDefaultGoMarketStore({ seller, role, marketId, storeName, storeLocation, storeContact, storeDescription, shopBanner }) {
+    if (!marketId) return null;
 
+    const market = await Market.findOne({ _id: marketId, status: 'active' });
+    if (!market) {
+        const error = new Error('Please select a valid active market');
+        error.statusCode = 400;
+        throw error;
+    }
+
+    const owner = await ShopOwner.findOneAndUpdate(
+        { $or: [{ userId: seller._id }, { email: seller.email }] },
+        {
+            $set: {
+                userId: seller._id,
+                name: seller.name,
+                email: seller.email,
+                mobile: String(storeContact || seller.mobile || ''),
+                avatar: seller.avatar || '',
+            },
+        },
+        { new: true, upsert: true, setDefaultsOnInsert: true }
+    );
+
+    const address = storeLocation || [market.name, market.city, market.state, market.pincode].filter(Boolean).join(', ');
+    const base = {
+        marketId: market._id,
+        ownerId: owner._id,
+        address,
+        latitude: market.latitude,
+        longitude: market.longitude,
+        description: storeDescription || '',
+        isOpen: true,
+    };
+
+    let store = null;
+    if (role === 'GROCERY_SELLER') {
+        store = await GroceryShop.findOneAndUpdate(
+            { ownerId: owner._id },
+           { $setOnInsert: { ...base, shopName: storeName, shopBanner: shopBanner || seller.storeProfile?.image || "" } },
+            { new: true, upsert: true, setDefaultsOnInsert: true }
+        );
+    } else if (role === 'RESTAURANT_SELLER') {
+        store = await Restaurant.findOneAndUpdate(
+            { ownerId: owner._id },
+            { $setOnInsert: { ...base, restaurantName: storeName, restaurantBanner: shopBanner || seller.storeProfile?.image || "" } },
+            { new: true, upsert: true, setDefaultsOnInsert: true }
+        );
+    }
+
+    seller.storeProfile.marketId = market._id;
+    seller.storeProfile.goMarketOwnerId = owner._id;
+    await seller.save();
+
+    return { owner, store, market };
+}
+
+const sendVerificationOtpEmail = async ({ email, name, otp, subject }) => {
+    const sent = await sendEmailFun({
+        sendTo: email,
+        subject: subject || `Verify your email – ${process.env.STORE_NAME || 'MyStore'}`,
+        text: `Your OTP is: ${otp}. It expires in 10 minutes.`,
+        html: VerificationEmail(name, otp),
+    });
+
+    if (!sent) {
+        console.error(`Verification email failed for ${email}`);
+        if (process.env.NODE_ENV === 'development') {
+            console.log(`[DEV] OTP for ${email}: ${otp}`);
+        }
+    }
+
+    return sent;
+};
 
 const cookiesOption = { httpOnly: true, secure: true, sameSite: "None" };
 
@@ -54,7 +146,11 @@ const sendLoginResponse = async (response, userId) => {
     const accesstoken = await generatedAccessToken(userId);
     const refreshToken = await generatedRefreshToken(userId);
 
-    await UserModel.findByIdAndUpdate(userId, { last_login_date: new Date() });
+    const user = await UserModel.findByIdAndUpdate(
+        userId,
+        { last_login_date: new Date() },
+        { new: true }
+    ).select("_id name email role storeProfile avatar status verify_email").lean();
 
     response.cookie('accessToken', accesstoken, cookiesOption);
     response.cookie('refreshToken', refreshToken, cookiesOption);
@@ -63,7 +159,7 @@ const sendLoginResponse = async (response, userId) => {
         message: "Login successfully",
         error: false,
         success: true,
-        data: { accesstoken, refreshToken }
+        data: { accesstoken, refreshToken, role: user?.role, user }
     });
 };
 
@@ -90,12 +186,11 @@ export async function registerUserController(request, response) {
                 existingUser.otpExpires = Date.now() + 10 * 60 * 1000;
                 await existingUser.save();
 
-                sendEmailFun({
-                    sendTo: email,
-                    subject: `Verify your email – ${process.env.STORE_NAME || 'MyStore'}`,
-                    text: `Your OTP is: ${newOtp}. It expires in 10 minutes.`,
-                    html: VerificationEmail(existingUser.name, newOtp)
-                }).catch((err) => console.error('Verification email error:', err));
+                await sendVerificationOtpEmail({
+                    email,
+                    name: existingUser.name,
+                    otp: newOtp,
+                });
 
                 return response.status(200).json({
                     success: true,
@@ -128,18 +223,18 @@ export async function registerUserController(request, response) {
 
         await user.save();
 
-        // Send verification email (non-blocking)
-        sendEmailFun({
-            sendTo: email,
-            subject: `Verify your email – ${process.env.STORE_NAME || 'MyStore'}`,
-            text: `Your OTP is: ${verifyCode}. It expires in 10 minutes.`,
-            html: VerificationEmail(name, verifyCode)
-        }).catch((err) => console.error('Verification email error:', err));
+        const emailSent = await sendVerificationOtpEmail({
+            email,
+            name,
+            otp: verifyCode,
+        });
 
         return response.status(200).json({
             success: true,
             error: false,
-            message: "Registered successfully! Please check your email to verify your account.",
+            message: emailSent
+                ? "Registered successfully! Please check your email to verify your account."
+                : "Registered successfully! OTP email could not be sent — use Resend OTP on the verify page.",
         });
 
     } catch (error) {
@@ -179,7 +274,7 @@ export async function verifyEmailController(request, response) {
             });
         }
 
-        const isCodeValid  = user.otp === otp;
+        const isCodeValid  = String(user.otp) === String(otp).trim();
         const isNotExpired = user.otpExpires > Date.now();
 
         if (isCodeValid && isNotExpired) {
@@ -188,21 +283,23 @@ export async function verifyEmailController(request, response) {
             user.otpExpires   = null;
             await user.save();
 
-            // Auto-login after verification
-            const accesstoken    = await generatedAccessToken(user._id);
-            const refreshToken   = await generatedRefreshToken(user._id);
-
-            await UserModel.findByIdAndUpdate(user._id, { last_login_date: new Date() });
-
-            const cookiesOption = { httpOnly: true, secure: true, sameSite: "None" };
-            response.cookie('accessToken', accesstoken, cookiesOption);
-            response.cookie('refreshToken', refreshToken, cookiesOption);
+            
 
             return response.status(200).json({
                 error: false,
                 success: true,
-                message: "Email verified successfully! You are now logged in.",
-                data: { accesstoken, refreshToken }
+                memessage: "Email verified successfully! Please login to continue.",
+                data: {
+                    role: user.role,
+                    redirectTo: "/login",
+                    user: {
+                        _id: user._id,
+                        name: user.name,
+                        email: user.email,
+                        role: user.role,
+                        storeProfile: user.storeProfile,
+                    }
+                }
             });
 
         } else if (!isCodeValid) {
@@ -258,12 +355,20 @@ export async function resendOtpController(request, response) {
         user.otpExpires = Date.now() + 10 * 60 * 1000;
         await user.save();
 
-        sendEmailFun({
-            sendTo: email,
+        const emailSent = await sendVerificationOtpEmail({
+            email,
+            name: user.name,
+            otp: newOtp,
             subject: `Your new OTP – ${process.env.STORE_NAME || 'MyStore'}`,
-            text: `Your new OTP is: ${newOtp}. It expires in 10 minutes.`,
-            html: VerificationEmail(user.name, newOtp)
-        }).catch((err) => console.error('Resend OTP email error:', err));
+        });
+
+        if (!emailSent) {
+            return response.status(500).json({
+                error: true,
+                success: false,
+                message: "Could not send OTP email. Please try again in a moment.",
+            });
+        }
 
         return response.status(200).json({
             error: false,
@@ -529,7 +634,7 @@ export async function verifyPhoneLoginOtpController(request, response) {
 
 export async function createSellerByAdminController(request, response) {
     try {
-        const { name, email, password, mobile } = request.body;
+        const { name, email, password, mobile, role } = request.body;
 
         if (!name || !email || !password) {
             return response.status(400).json({
@@ -550,13 +655,14 @@ export async function createSellerByAdminController(request, response) {
 
         const salt = await bcryptjs.genSalt(10);
         const hashPassword = await bcryptjs.hash(password, salt);
+        const sellerRole = normalizePanelRole(role, 'SELLER');
 
         const seller = await UserModel.create({
             name,
             email,
             mobile: mobile || null,
             password: hashPassword,
-            role: "SELLER",
+            role: sellerRole,
             verify_email: true,
             status: "Active",
         });
@@ -590,7 +696,7 @@ export async function updateUserAccessByAdminController(request, response) {
 
         const payload = {};
         if (status) payload.status = status;
-        if (role) payload.role = role;
+         if (role) payload.role = normalizePanelRole(role, 'USER');
 
         if (!Object.keys(payload).length) {
             return response.status(400).json({
@@ -1069,10 +1175,46 @@ export async function getAllReviews(request, response) {
         let reviewFilter = {};
         let productMeta = [];
 
-        if (request.currentUser?.role === 'SELLER') {
-            productMeta = await ProductModel.find({ seller: request.userId })
-                .select('_id name images')
-                .lean();
+        if (isSellerRole(request.currentUser?.role)) {
+            const userRole = request.currentUser?.role;
+            
+            // Get seller's product IDs based on their role
+            if (userRole === 'SELLER') {
+                // Regular marketplace products
+                productMeta = await ProductModel.find({ seller: request.userId })
+                    .select('_id name images')
+                    .lean();
+            } else if (userRole === 'GROCERY_SELLER') {
+                // Get grocery shop owner IDs
+                const ownerIds = (await ShopOwner.find({ $or: [{ userId: request.userId }, { email: request.currentUser?.email }] }).select("_id").lean()).map((owner) => owner._id);
+                
+                if (ownerIds.length > 0) {
+                    // Get shop IDs
+                    const shopIds = (await GroceryShop.find({ ownerId: { $in: ownerIds } }).select("_id").lean()).map((shop) => shop._id);
+                    
+                    if (shopIds.length > 0) {
+                        // Get grocery products
+                        productMeta = await GroceryProduct.find({ shopId: { $in: shopIds } })
+                             .select('_id name image images')
+                            .lean();
+                    }
+                }
+            } else if (userRole === 'RESTAURANT_SELLER') {
+                // Get restaurant owner IDs
+                const ownerIds = (await ShopOwner.find({ $or: [{ userId: request.userId }, { email: request.currentUser?.email }] }).select("_id").lean()).map((owner) => owner._id);
+                
+                if (ownerIds.length > 0) {
+                    // Get restaurant IDs
+                    const restaurantIds = (await Restaurant.find({ ownerId: { $in: ownerIds } }).select("_id").lean()).map((restaurant) => restaurant._id);
+                    
+                    if (restaurantIds.length > 0) {
+                        // Get restaurant items
+                        productMeta = await RestaurantItem.find({ restaurantId: { $in: restaurantIds } })
+                            .select('_id itemName image images')
+                            .lean();
+                    }
+                }
+            }
 
             const sellerProductIds = productMeta.map((product) => String(product._id));
 
@@ -1096,17 +1238,23 @@ export async function getAllReviews(request, response) {
             .lean();
 
         const reviewProductIds = [...new Set(reviews.map((item) => item.productId).filter(Boolean))];
-        if (request.currentUser?.role !== 'SELLER' && reviewProductIds.length > 0) {
-            productMeta = await ProductModel.find({ _id: { $in: reviewProductIds } })
-                .select('_id name images seller')
-                .lean();
+        
+        // If admin, fetch all product types
+        if (!isSellerRole(request.currentUser?.role) && reviewProductIds.length > 0) {
+            const [marketProducts, groceryProducts, restaurantItems] = await Promise.all([
+                ProductModel.find({ _id: { $in: reviewProductIds } }).select('_id name images seller').lean(),
+                GroceryProduct.find({ _id: { $in: reviewProductIds } }).select('_id name image images').lean(),
+                RestaurantItem.find({ _id: { $in: reviewProductIds } }).select('_id itemName image images').lean()
+            ]);
+            
+            productMeta = [...marketProducts, ...groceryProducts, ...restaurantItems];
         }
 
         const productMap = new Map(productMeta.map((item) => [String(item._id), item]));
         const reviewsWithProduct = reviews.map((item) => ({
             ...item,
-            productName: productMap.get(item.productId)?.name || 'Product',
-            productImage: productMap.get(item.productId)?.images?.[0] || ''
+            productName: productMap.get(item.productId)?.name || productMap.get(item.productId)?.itemName || 'Product',
+            productImage: productMap.get(item.productId)?.images?.[0] || productMap.get(item.productId)?.image || ''
         }));
 
         return response.status(200).json({
@@ -1175,7 +1323,7 @@ export async function getSellerStoreProfile(request, response) {
         const sellerId = request.params.sellerId || request.userId;
         const seller = await UserModel.findById(sellerId).select("name email role storeProfile bankDetails status");
 
-        if (!seller || seller.role !== "SELLER") {
+        if (!seller || !isSellerRole(seller.role)) {
             return response.status(404).json({ error: true, success: false, message: "Seller not found" });
         }
 
@@ -1248,7 +1396,7 @@ export async function approveWalletRequest(request, response) {
         }
 
         const seller = await UserModel.findById(sellerId);
-        if (!seller || seller.role !== "SELLER") {
+        if (!seller || !isSellerRole(seller.role)) {
             return response.status(404).json({ error: true, success: false, message: "Seller not found" });
         }
 
@@ -1416,15 +1564,19 @@ export async function deleteMultiple(request, response) {
 
 export async function registerSellerController(request, response) {
     try {
-        const { 
-            name, email, password, mobile, 
-            storeName, storeLocation, storeContact, storeDescription,
-            accountHolderName, bankName, accountNumber, ifscCode 
+        
+            const {
+            name, email, password, mobile, role, marketId,
+            storeName, storeLocation, storeContact, storeDescription, shopBanner, drivingLicense,
+            accountHolderName, bankName, accountNumber, ifscCode
         } = request.body;
 
-        if (!name || !email || !password || !storeName) {
+        const sellerRole = normalizePublicSellerRole(role);
+        const contactNumber = storeContact || mobile;
+
+        if (!name || !email || !password || !marketId || (sellerRole !== 'DELIVERY_RIDER' && (!storeName || !contactNumber))) {
             return response.status(400).json({
-                message: "Please provide essential basic and store details.",
+                message: sellerRole === 'DELIVERY_RIDER' ? "Please provide basic details and market." : "Please provide essential basic and store details.",
                 error: true,
                 success: false
             });
@@ -1433,49 +1585,73 @@ export async function registerSellerController(request, response) {
         const existingUser = await UserModel.findOne({ email });
         if (existingUser) {
             if (existingUser.verify_email === false) {
-                // Resend OTP logic (same as normal user)
                 const newOtp = Math.floor(100000 + Math.random() * 900000).toString();
                 existingUser.otp = newOtp;
                 existingUser.otpExpires = Date.now() + 10 * 60 * 1000;
                 await existingUser.save();
 
-                sendEmailFun({
-                    sendTo: email,
-                    subject: `Verify your Seller Account – ${process.env.STORE_NAME || 'Zeedaddy'}`,
-                    text: `Your OTP is: ${newOtp}. It expires in 10 minutes.`,
-                    html: VerificationEmail(existingUser.name, newOtp)
-                }).catch((err) => console.error('Verification email error:', err));
+                const emailSent = await sendVerificationOtpEmail({
+                    email,
+                    name: existingUser.name,
+                    otp: newOtp,
+                    subject: `Verify your seller email – ${process.env.STORE_NAME || 'MyStore'}`,
+                });
 
                 return response.status(200).json({
-                    success: true, error: false,
-                    message: "OTP resent! Please check your email to verify your seller account.",
+                    success: true,
+                    error: false,
+                    message: emailSent
+                        ? "OTP resent! Please check your email to verify your account."
+                        : "Account exists but OTP email could not be sent — use Resend OTP on the verify page.",
+                    data: { email: existingUser.email },
                 });
             }
+
             return response.status(400).json({
                 message: "Email already registered.",
-                error: true, success: false
+                error: true,
+                success: false
             });
         }
 
-        const verifyCode = Math.floor(100000 + Math.random() * 900000).toString();
+        const selectedMarket = await Market.findOne({ _id: marketId, status: 'active' }).select('_id');
+        if (!selectedMarket) {
+            return response.status(400).json({
+                message: "Please select a valid active market",
+                error: true,
+                success: false
+            });
+        }
+
+        
         const salt = await bcryptjs.genSalt(10);
         const hashPassword = await bcryptjs.hash(password, salt);
+        const verifyCode = Math.floor(100000 + Math.random() * 900000).toString();
 
         const seller = new UserModel({
             email,
             password: hashPassword,
             name,
             mobile,
-            role: 'USER', // Hardcode role for this specific route
+            role: sellerRole,
+            verify_email: false,
             otp: verifyCode,
             otpExpires: Date.now() + 10 * 60 * 1000,
-            verify_email: false,
-            storeProfile: {
+            status: "Active",
+            storeProfile: sellerRole === 'DELIVERY_RIDER' ? undefined : {
                 storeName: storeName || "",
                 location: storeLocation || "",
-                contactNo: storeContact || mobile || "",
-                description: storeDescription || ""
+                contactNo: contactNumber || "",
+                description: storeDescription || "",
+                image: shopBanner || "",
+                category: "",
+                marketId
             },
+            riderProfile: sellerRole === 'DELIVERY_RIDER' ? {
+                marketId,
+                drivingLicense: drivingLicense || "",
+                isAvailable: true,
+            } : undefined,
             bankDetails: {
                 accountHolderName: accountHolderName || "",
                 bankName: bankName || "",
@@ -1485,21 +1661,35 @@ export async function registerSellerController(request, response) {
         });
 
         await seller.save();
+        const goMarket = sellerRole === 'DELIVERY_RIDER' ? null : await createDefaultGoMarketStore({
+            seller,
+            role: sellerRole,
+            marketId,
+            storeName,
+            storeLocation,
+            storeContact: contactNumber,
+            storeDescription,
+            shopBanner,
+        });
 
-        sendEmailFun({
-            sendTo: email,
-            subject: `Verify your Seller Account – ${process.env.STORE_NAME || 'Zeedaddy'}`,
-            text: `Your OTP is: ${verifyCode}. It expires in 10 minutes.`,
-            html: VerificationEmail(name, verifyCode)
-        }).catch((err) => console.error('Verification email error:', err));
+        const emailSent = await sendVerificationOtpEmail({
+            email,
+            name,
+            otp: verifyCode,
+            subject: `Verify your seller email – ${process.env.STORE_NAME || 'MyStore'}`,
+        });
 
         return response.status(200).json({
-            success: true, error: false,
-            message: "Seller registered successfully! Please verify your email.",
+            success: true,
+            error: false,
+            message: emailSent
+                ? "Seller registered successfully! Please verify your email OTP to open your panel."
+                : "Seller registered! OTP email could not be sent — use Resend OTP on the verify page.",
+            data: { email: seller.email, role: sellerRole, sellerId: seller._id, goMarket }
         });
 
     } catch (error) {
-        return response.status(500).json({
+        return response.status(error.statusCode || 500).json({
             message: error.message || error,
             error: true, success: false
         });

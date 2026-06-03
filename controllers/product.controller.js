@@ -1,12 +1,37 @@
 import ReviewModel from "../models/reviews.model.js";
+import UserModel from "../models/user.model.js";
 import ProductModel from "../models/product.modal.js";
 import ProductRAMSModel from "../models/productRAMS.js";
 import ProductWEIGHTModel from "../models/productWEIGHT.js";
 import ProductSIZEModel from "../models/productSIZE.js";
+import GroceryProduct from "../models/groceryProduct.model.js";
+import RestaurantItem from "../models/restaurantItem.model.js";
+import {
+  assertSellerOwnsGroceryProduct,
+  assertSellerOwnsRestaurantItem,
+  bumpGroceryShopProductCount,
+  getOrCreateDefaultRestaurantMenu,
+  getSellerGroceryShop,
+  getSellerRestaurant,
+  mapGroceryProductToAdminProduct,
+  mapRestaurantItemToAdminProduct,
+} from "../utils/goMarketSellerCatalog.js";
+import { normalizeSpecifications } from "../utils/productSpecs.js";
+import { rankSuggestions } from "../utils/searchSuggest.js";
 
 import { v2 as cloudinary } from "cloudinary";
 import fs from "fs";
 import mongoose from "mongoose";
+
+const SELLER_ROLES = ["SELLER", "GROCERY_SELLER", "RESTAURANT_SELLER"];
+const isSellerRole = (role) => SELLER_ROLES.includes(role);
+
+const resolveRequestRole = async (request) => {
+  if (request.currentUser?.role) return request.currentUser.role;
+  const user = await UserModel.findById(request.userId).select("role email status").lean();
+  if (user) request.currentUser = { ...request.currentUser, ...user };
+  return user?.role;
+};
 
 const normalizeKeywords = (keywords) => {
   if (Array.isArray(keywords)) {
@@ -373,6 +398,84 @@ export async function uploadBannerImages(request, response) {
 //create product
 export async function createProduct(request, response) {
   try {
+    const role = await resolveRequestRole(request);
+    const requestImages = Array.isArray(request.body.images) ? request.body.images.filter(Boolean) : [];
+    const uploadedImages = Array.isArray(imagesArr) ? imagesArr.filter(Boolean) : [];
+    const imageList = [...new Set([...uploadedImages, ...requestImages, request.body.image].filter(Boolean))];
+    const imageUrl = imageList[0] || "";
+
+    if (role === "GROCERY_SELLER") {
+      const shop = await getSellerGroceryShop(request.userId, request.currentUser.email);
+      if (!shop) {
+        return response.status(400).json({
+          message: "No grocery shop found. Please complete store setup first.",
+          error: true,
+          success: false,
+        });
+      }
+
+      const groceryProduct = await GroceryProduct.create({
+        shopId: shop._id,
+        name: request.body.name,
+        title: request.body.title || request.body.name || "",
+        specifications: normalizeSpecifications(request.body.specifications),
+        productOptions: request.body.productOptions || [],
+        image: imageUrl,
+        images: imageList,
+        categoryId: request.body.goMarketCategoryId || request.body.categoryId || null,
+        subCategoryId: request.body.goMarketSubCategoryId || request.body.subCategoryId || null,
+        price: Number(request.body.price || 0),
+        discountPrice: Number(request.body.oldPrice || request.body.discountPrice || 0),
+        stock: Number(request.body.countInStock || 0),
+        description: request.body.description || "",
+      });
+      await bumpGroceryShopProductCount(shop._id, 1);
+      imagesArr = [];
+
+      return response.status(200).json({
+        message: "Product added to your grocery shop successfully",
+        error: false,
+        success: true,
+        product: mapGroceryProductToAdminProduct(groceryProduct.toObject()),
+      });
+    }
+
+    if (role === "RESTAURANT_SELLER") {
+      const restaurant = await getSellerRestaurant(request.userId, request.currentUser.email);
+      if (!restaurant) {
+        return response.status(400).json({
+          message: "No restaurant found. Please complete store setup first.",
+          error: true,
+          success: false,
+        });
+      }
+
+      const menu = await getOrCreateDefaultRestaurantMenu(restaurant._id);
+      const restaurantItem = await RestaurantItem.create({
+        restaurantId: restaurant._id,
+        menuId: menu._id,
+        itemName: request.body.name,
+        title: request.body.title || request.body.name || "",
+        specifications: normalizeSpecifications(request.body.specifications),
+        productOptions: request.body.productOptions || [],
+        image: imageUrl,
+        images: imageList,
+        categoryId: request.body.goMarketCategoryId || request.body.categoryId || null,
+        subCategoryId: request.body.goMarketSubCategoryId || request.body.subCategoryId || null,
+        price: Number(request.body.price || 0),
+        discountPrice: Number(request.body.oldPrice || request.body.discountPrice || 0),
+        description: request.body.description || "",
+      });
+      imagesArr = [];
+
+      return response.status(200).json({
+        message: "Item added to your restaurant successfully",
+        error: false,
+        success: true,
+        product: mapRestaurantItemToAdminProduct(restaurantItem.toObject()),
+      });
+    }
+
     let product = new ProductModel({
       name: request.body.name,
       description: request.body.description,
@@ -977,6 +1080,44 @@ export async function getProductsBySellerPublic(request, response) {
 
 export async function getSellerProducts(request, response) {
   try {
+    const role = request.currentUser?.role;
+
+    if (role === "GROCERY_SELLER") {
+      const shop = await getSellerGroceryShop(request.userId, request.currentUser.email);
+      if (!shop) {
+        return response.status(200).json({ error: false, success: true, products: [], total: 0 });
+      }
+      const products = await GroceryProduct.find({ shopId: shop._id })
+        .sort({ createdAt: -1 })
+        .populate("categoryId subCategoryId")
+        .lean();
+      const mapped = products.map(mapGroceryProductToAdminProduct);
+      return response.status(200).json({
+        error: false,
+        success: true,
+        products: mapped,
+        total: mapped.length,
+      });
+    }
+
+    if (role === "RESTAURANT_SELLER") {
+      const restaurant = await getSellerRestaurant(request.userId, request.currentUser.email);
+      if (!restaurant) {
+        return response.status(200).json({ error: false, success: true, products: [], total: 0 });
+      }
+      const items = await RestaurantItem.find({ restaurantId: restaurant._id })
+        .sort({ createdAt: -1 })
+        .populate("categoryId subCategoryId")
+        .lean();
+      const mapped = items.map(mapRestaurantItemToAdminProduct);
+      return response.status(200).json({
+        error: false,
+        success: true,
+        products: mapped,
+        total: mapped.length,
+      });
+    }
+
     const products = await ProductModel.find({ seller: request.userId })
       .sort({ createdAt: -1 })
       .populate("seller", "name email role status storeProfile");
@@ -1080,6 +1221,33 @@ export async function getAllProductsBanners(request, response) {
 
 //delete product
 export async function deleteProduct(request, response) {
+  if (request.currentUser?.role === "GROCERY_SELLER") {
+    const owned = await assertSellerOwnsGroceryProduct(
+      request.params.id,
+      request.userId,
+      request.currentUser.email,
+    );
+    if (!owned) {
+      return response.status(404).json({ message: "Product Not found", error: true, success: false });
+    }
+    await GroceryProduct.findByIdAndDelete(request.params.id);
+    await bumpGroceryShopProductCount(owned.shop._id, -1);
+    return response.status(200).json({ success: true, error: false, message: "Product Deleted!" });
+  }
+
+  if (request.currentUser?.role === "RESTAURANT_SELLER") {
+    const owned = await assertSellerOwnsRestaurantItem(
+      request.params.id,
+      request.userId,
+      request.currentUser.email,
+    );
+    if (!owned) {
+      return response.status(404).json({ message: "Product Not found", error: true, success: false });
+    }
+    await RestaurantItem.findByIdAndDelete(request.params.id);
+    return response.status(200).json({ success: true, error: false, message: "Product Deleted!" });
+  }
+
   const product = await ProductModel.findById(request.params.id).populate("category");
   if (!product) {
     return response.status(404).json({ message: "Product Not found", error: true, success: false });
@@ -1102,6 +1270,34 @@ export async function deleteMultipleProduct(request, response) {
   if (!ids || !Array.isArray(ids)) {
     return response.status(400).json({ error: true, success: false, message: "Invalid input" });
   }
+
+  if (request.currentUser?.role === "GROCERY_SELLER") {
+    const shop = await getSellerGroceryShop(request.userId, request.currentUser.email);
+    if (!shop) {
+      return response.status(400).json({ error: true, success: false, message: "No grocery shop found" });
+    }
+    const result = await GroceryProduct.deleteMany({ _id: { $in: ids }, shopId: shop._id });
+    if (result.deletedCount) await bumpGroceryShopProductCount(shop._id, -result.deletedCount);
+    return response.status(200).json({
+      message: "Product delete successfully",
+      error: false,
+      success: true,
+    });
+  }
+
+  if (request.currentUser?.role === "RESTAURANT_SELLER") {
+    const restaurant = await getSellerRestaurant(request.userId, request.currentUser.email);
+    if (!restaurant) {
+      return response.status(400).json({ error: true, success: false, message: "No restaurant found" });
+    }
+    await RestaurantItem.deleteMany({ _id: { $in: ids }, restaurantId: restaurant._id });
+    return response.status(200).json({
+      message: "Product delete successfully",
+      error: false,
+      success: true,
+    });
+  }
+
   for (const id of ids) {
     const product = await ProductModel.findById(id);
     if (product) {
@@ -1127,6 +1323,32 @@ export async function deleteMultipleProduct(request, response) {
 export async function getProduct(request, response) {
   try {
     const id = request.params.id;
+
+    if (request.currentUser?.role === "GROCERY_SELLER") {
+      const owned = await assertSellerOwnsGroceryProduct(id, request.userId, request.currentUser.email);
+      if (!owned) {
+        return response.status(404).json({ message: "The product is not found", error: true, success: false });
+      }
+      const product = await GroceryProduct.findById(id).populate("categoryId subCategoryId").lean();
+      return response.status(200).json({
+        error: false,
+        success: true,
+        product: mapGroceryProductToAdminProduct(product),
+      });
+    }
+
+    if (request.currentUser?.role === "RESTAURANT_SELLER") {
+      const owned = await assertSellerOwnsRestaurantItem(id, request.userId, request.currentUser.email);
+      if (!owned) {
+        return response.status(404).json({ message: "The product is not found", error: true, success: false });
+      }
+      const product = await RestaurantItem.findById(id).populate("categoryId subCategoryId").lean();
+      return response.status(200).json({
+        error: false,
+        success: true,
+        product: mapRestaurantItemToAdminProduct(product),
+      });
+    }
 
     // Cache hit — instant return, no DB call
     const cached = _cacheGet(id);
@@ -1170,11 +1392,94 @@ export async function removeImageFromCloudinary(request, response) {
 //updated product
 export async function updateProduct(request, response) {
   try {
+    const incomingImages = Array.isArray(request.body.images) ? request.body.images.filter(Boolean) : [];
+    const imageUrl = incomingImages[0] || request.body.image || "";
+
+    if (request.currentUser?.role === "GROCERY_SELLER") {
+      const owned = await assertSellerOwnsGroceryProduct(
+        request.params.id,
+        request.userId,
+        request.currentUser.email,
+      );
+      if (!owned) {
+        return response.status(404).json({ error: true, success: false, message: "Product not found" });
+      }
+
+      const product = await GroceryProduct.findByIdAndUpdate(
+        request.params.id,
+        {
+          name: request.body.name,
+          title: request.body.title !== undefined ? request.body.title : owned.product.title,
+          specifications: request.body.specifications !== undefined
+            ? normalizeSpecifications(request.body.specifications)
+            : owned.product.specifications,
+            productOptions: request.body.productOptions !== undefined ? request.body.productOptions : owned.product.productOptions,
+          description: request.body.description,
+          image: imageUrl || owned.product.image,
+          images: incomingImages.length ? incomingImages : (owned.product.images || (owned.product.image ? [owned.product.image] : [])),
+          categoryId: request.body.goMarketCategoryId || request.body.categoryId || owned.product.categoryId,
+          subCategoryId: request.body.goMarketSubCategoryId || request.body.subCategoryId || owned.product.subCategoryId,
+          price: Number(request.body.price ?? owned.product.price),
+          discountPrice: Number(request.body.oldPrice ?? request.body.discountPrice ?? owned.product.discountPrice),
+          stock: Number(request.body.countInStock ?? owned.product.stock),
+        },
+        { new: true },
+      ).populate("categoryId subCategoryId").lean();
+
+      return response.status(200).json({
+        message: "The product is updated",
+        error: false,
+        success: true,
+        product: mapGroceryProductToAdminProduct(product),
+      });
+    }
+
+    if (request.currentUser?.role === "RESTAURANT_SELLER") {
+      const owned = await assertSellerOwnsRestaurantItem(
+        request.params.id,
+        request.userId,
+        request.currentUser.email,
+      );
+      if (!owned) {
+        return response.status(404).json({ error: true, success: false, message: "Product not found" });
+      }
+
+      const product = await RestaurantItem.findByIdAndUpdate(
+        request.params.id,
+        {
+          itemName: request.body.name,
+          title: request.body.title !== undefined ? request.body.title : owned.item.title,
+          specifications: request.body.specifications !== undefined
+            ? normalizeSpecifications(request.body.specifications)
+            : owned.item.specifications,
+            productOptions: request.body.productOptions !== undefined ? request.body.productOptions : owned.item.productOptions,
+          description: request.body.description,
+          image: imageUrl || owned.item.image,
+          images: incomingImages.length ? incomingImages : (owned.item.images || (owned.item.image ? [owned.item.image] : [])),
+          categoryId: request.body.goMarketCategoryId || request.body.categoryId || owned.item.categoryId,
+          subCategoryId: request.body.goMarketSubCategoryId || request.body.subCategoryId || owned.item.subCategoryId,
+          price: Number(request.body.price ?? owned.item.price),
+          discountPrice: Number(request.body.oldPrice ?? request.body.discountPrice ?? owned.item.discountPrice),
+          isAvailable: request.body.isAvailable !== undefined
+            ? Boolean(request.body.isAvailable)
+            : owned.item.isAvailable,
+        },
+        { new: true },
+      ).populate("categoryId subCategoryId").lean();
+
+      return response.status(200).json({
+        message: "The product is updated",
+        error: false,
+        success: true,
+        product: mapRestaurantItemToAdminProduct(product),
+      });
+    }
+
     const existingProduct = await ProductModel.findById(request.params.id);
     if (!existingProduct) {
       return response.status(404).json({ error: true, success: false, message: "Product not found" });
     }
-    if (request.currentUser?.role === "SELLER" && existingProduct.seller?.toString() !== request.userId) {
+    if (isSellerRole(request.currentUser?.role) && existingProduct.seller?.toString() !== request.userId) {
       return response.status(403).json({ error: true, success: false, message: "You can update only your products" });
     }
     const product = await ProductModel.findByIdAndUpdate(
@@ -1741,6 +2046,62 @@ export async function sortBy(request, response) {
   return response.status(200).json({ error: false, success: true, products: sortedItems, totalPages: 0, page: 0 });
 }
 
+// Product search suggestions with fuzzy matching
+export async function productSearchSuggestions(request, response) {
+  try {
+    const { q } = request.query;
+    const query = String(q || "").trim();
+
+    if (!query || query.length < 2) {
+      return response.status(200).json({ 
+        error: false, 
+        success: true, 
+        suggestions: [] 
+      });
+    }
+
+    // Fetch products with basic search
+    const products = await ProductModel.find({
+      $or: [
+        { name: new RegExp(query, "i") },
+        { brand: new RegExp(query, "i") },
+        { keywords: new RegExp(query, "i") },
+        { catName: new RegExp(query, "i") },
+        { subCat: new RegExp(query, "i") },
+      ]
+    })
+    .select("name brand catName subCat image price discount")
+    .limit(200)
+    .lean();
+
+    // Use fuzzy matching to rank suggestions
+    const suggestions = rankSuggestions(query, products, {
+      limit: 8,
+      getLabel: (p) => p.name,
+    }).map((p) => ({
+      _id: p._id,
+      name: p.name,
+      brand: p.brand,
+      category: p.catName || p.subCat,
+      image: p.image,
+      price: p.price,
+      discount: p.discount,
+    }));
+
+    return response.status(200).json({
+      error: false,
+      success: true,
+      suggestions,
+    });
+  } catch (error) {
+    return response.status(500).json({ 
+      message: error.message || error, 
+      error: true, 
+      success: false 
+    });
+  }
+}
+
 export async function searchProductController(request, response) {
   try {
     const {
@@ -2020,12 +2381,7 @@ export async function addReview(request, response) {
       return response.status(400).json({ error: true, message: "Rating must be 1–5" });
     }
 
-    // One review per user per product
-    const existing = await ReviewModel.findOne({ userId, productId });
-    if (existing) {
-      return response.status(409).json({ error: true, message: "You have already reviewed this product" });
-    }
-
+    // Allow multiple reviews per user per product (removed unique constraint check)
     const newReview = await ReviewModel.create({
       image:     image     || "",
       userName:  userName  || "Anonymous",
