@@ -545,7 +545,7 @@ export async function getAllProducts(request, response) {
     const total = await ProductModel.countDocuments();
     const products = await ProductModel.find()
       .populate("seller", "name email role status storeProfile")
-      .sort({ createdAt: -1 })
+      .sort({ sale: -1, createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit)
       .lean(); // ✅ FIX: lean() — 2-3x faster, plain JS object return karta hai
