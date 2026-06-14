@@ -1026,45 +1026,74 @@ export async function userDetails(request, response) {
 
 
 // ─── Avatar Upload ────────────────────────────────────────────────────────────
-var imagesArr = [];
 export async function userAvatarController(request, response) {
     try {
-        imagesArr = [];
         const userId = request.userId;
-        const image  = request.files;
+        const image = request.file;
+
+        if (!image) {
+            return response.status(400).json({
+                message: "No image file provided",
+                error: true, success: false
+            });
+        }
 
         const user = await UserModel.findOne({ _id: userId });
         if (!user) {
-            return response.status(500).json({
+            return response.status(404).json({
                 message: "User not found",
                 error: true, success: false
             });
         }
 
-        const imgUrl      = user.avatar;
-        const urlArr      = imgUrl.split("/");
-        const avatar_image = urlArr[urlArr.length - 1];
-        const imageName   = avatar_image.split(".")[0];
-
-        if (imageName) {
-            await cloudinary.uploader.destroy(imageName);
+        // Delete old avatar from Cloudinary if exists
+        const imgUrl = user.avatar;
+        if (imgUrl) {
+            const urlArr = imgUrl.split("/");
+            const avatar_image = urlArr[urlArr.length - 1];
+            const imageName = avatar_image.split(".")[0];
+            if (imageName) {
+                try {
+                    await cloudinary.uploader.destroy(imageName);
+                } catch (err) {
+                    console.log("Failed to delete old avatar:", err);
+                }
+            }
         }
 
-        const options = { use_filename: true, unique_filename: false, overwrite: false };
+        // Upload new avatar to Cloudinary
+        const options = { use_filename: true, unique_filename: false, overwrite: true };
+        
+        cloudinary.uploader.upload(image.path, options, async function (error, result) {
+            if (error) {
+                console.log("Cloudinary upload error:", error);
+                return response.status(500).json({
+                    message: "Failed to upload image",
+                    error: true, success: false
+                });
+            }
 
-        for (let i = 0; i < image?.length; i++) {
-            await cloudinary.uploader.upload(image[i].path, options, function (error, result) {
-                imagesArr.push(result.secure_url);
-                fs.unlinkSync(`uploads/${request.files[i].filename}`);
+            // Delete local file
+            try {
+                fs.unlinkSync(image.path);
+            } catch (err) {
+                console.log("Failed to delete local file:", err);
+            }
+
+            // Update user avatar
+            user.avatar = result.secure_url;
+            await user.save();
+
+            return response.status(200).json({ 
+                error: false, 
+                success: true,
+                message: "Avatar updated successfully",
+                avatar: result.secure_url 
             });
-        }
-
-        user.avatar = imagesArr[0];
-        await user.save();
-
-        return response.status(200).json({ _id: userId, avtar: imagesArr[0] });
+        });
 
     } catch (error) {
+        console.log("Avatar upload error:", error);
         return response.status(500).json({
             message: error.message || error,
             error: true, success: false
