@@ -113,6 +113,7 @@ const userSchema = mongoose.Schema({
         supportEmail: { type: String, default: "" },
         marketId:     { type: mongoose.Schema.ObjectId, ref: 'Market', default: null },
         goMarketOwnerId: { type: mongoose.Schema.ObjectId, ref: 'ShopOwner', default: null },
+        storeStatus:  { type: String, enum: ["open", "closed"], default: "open" },
     },
     bankDetails: {
         accountHolderName: { type: String, default: "" },
