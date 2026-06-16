@@ -1025,7 +1025,7 @@ export async function userDetails(request, response) {
 }
 
 
-// ─── Avatar Upload ────────────────────────────────────────────────────────────
+// ─── Avatar Uploaddf ────────────────────────────────────────────────────────────
 export async function userAvatarController(request, response) {
     console.log("🔵 Avatar upload endpoint hit");
     console.log("🔵 Request user ID:", request.userId);
