@@ -19,7 +19,6 @@ import GroceryShop from '../models/groceryShop.model.js';
 import Restaurant from '../models/restaurant.model.js';
 import GroceryProduct from '../models/groceryProduct.model.js';
 import RestaurantItem from '../models/restaurantItem.model.js';
-import { deleteUploadedFile, isVercel } from '../utils/uploadHelper.js';
 
 const SELLER_ROLES = ['SELLER', 'GROCERY_SELLER', 'RESTAURANT_SELLER'];
 const ALL_PANEL_ROLES = ['ADMIN', 'USER', ...SELLER_ROLES];
@@ -1029,7 +1028,6 @@ export async function userDetails(request, response) {
 // ─── Avatar Uploaddf ────────────────────────────────────────────────────────────
 export async function userAvatarController(request, response) {
     console.log("🔵 Avatar upload endpoint hit");
-    console.log("🔵 Environment:", isVercel() ? "Vercel" : "Local");
     console.log("🔵 Request user ID:", request.userId);
     console.log("🔵 Request file:", request.file);
     
@@ -1058,7 +1056,11 @@ export async function userAvatarController(request, response) {
         if (!user) {
             console.error("❌ User not found:", userId);
             // Clean up uploaded file
-            deleteUploadedFile(image.path);
+            try {
+                fs.unlinkSync(image.path);
+            } catch (err) {
+                console.log("⚠️ Cleanup failed:", err.message);
+            }
             return response.status(404).json({
                 message: "User not found",
                 error: true, 
@@ -1074,13 +1076,14 @@ export async function userAvatarController(request, response) {
                 const urlArr = user.avatar.split("/");
                 const avatar_image = urlArr[urlArr.length - 1];
                 const imageName = avatar_image.split(".")[0];
-                if (imageName && imageName.length > 5) {
+                if (imageName && imageName.length > 5) { // Basic validation
                     console.log("🗑️ Deleting old avatar:", imageName);
                     await cloudinary.uploader.destroy(imageName);
                     console.log("✅ Old avatar deleted");
                 }
             } catch (err) {
                 console.log("⚠️ Failed to delete old avatar:", err.message);
+                // Continue with upload even if delete fails
             }
         }
 
@@ -1102,8 +1105,13 @@ export async function userAvatarController(request, response) {
         console.log("✅ Cloudinary upload successful");
         console.log("✅ New avatar URL:", result.secure_url);
 
-        // Delete local/temp file using helper
-        deleteUploadedFile(image.path);
+        // Delete local file
+        try {
+            fs.unlinkSync(image.path);
+            console.log("✅ Local file deleted");
+        } catch (err) {
+            console.log("⚠️ Failed to delete local file:", err.message);
+        }
 
         // Update user avatar in database
         user.avatar = result.secure_url;
@@ -1122,9 +1130,14 @@ export async function userAvatarController(request, response) {
         console.error("❌ Avatar upload error:", error);
         console.error("❌ Error stack:", error.stack);
         
-        // Clean up local file if exists using helper
+        // Clean up local file if exists
         if (request.file?.path) {
-            deleteUploadedFile(request.file.path);
+            try {
+                fs.unlinkSync(request.file.path);
+                console.log("✅ Cleanup: Local file deleted after error");
+            } catch (err) {
+                console.log("⚠️ Cleanup failed:", err.message);
+            }
         }
 
         return response.status(500).json({
