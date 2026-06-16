@@ -1031,10 +1031,14 @@ export async function userAvatarController(request, response) {
         const userId = request.userId;
         const image = request.file;
 
+        console.log("📸 Avatar upload request - userId:", userId);
+        console.log("📸 File received:", image ? image.filename : "No file");
+
         if (!image) {
             return response.status(400).json({
                 message: "No image file provided",
-                error: true, success: false
+                error: true, 
+                success: false
             });
         }
 
@@ -1042,7 +1046,8 @@ export async function userAvatarController(request, response) {
         if (!user) {
             return response.status(404).json({
                 message: "User not found",
-                error: true, success: false
+                error: true, 
+                success: false
             });
         }
 
@@ -1054,49 +1059,67 @@ export async function userAvatarController(request, response) {
             const imageName = avatar_image.split(".")[0];
             if (imageName) {
                 try {
+                    console.log("🗑️ Deleting old avatar:", imageName);
                     await cloudinary.uploader.destroy(imageName);
                 } catch (err) {
-                    console.log("Failed to delete old avatar:", err);
+                    console.log("⚠️ Failed to delete old avatar:", err.message);
                 }
             }
         }
 
-        // Upload new avatar to Cloudinary
-        const options = { use_filename: true, unique_filename: false, overwrite: true };
+        // Upload new avatar to Cloudinary using promise-based approach
+        const options = { 
+            use_filename: true, 
+            unique_filename: true, 
+            overwrite: true,
+            folder: 'avatars',
+            transformation: [
+                { width: 500, height: 500, crop: 'fill', gravity: 'face' },
+                { quality: 'auto:good' }
+            ]
+        };
         
-        cloudinary.uploader.upload(image.path, options, async function (error, result) {
-            if (error) {
-                console.log("Cloudinary upload error:", error);
-                return response.status(500).json({
-                    message: "Failed to upload image",
-                    error: true, success: false
-                });
-            }
+        console.log("📤 Uploading to Cloudinary...");
+        const result = await cloudinary.uploader.upload(image.path, options);
+        console.log("✅ Cloudinary upload successful:", result.secure_url);
 
-            // Delete local file
-            try {
-                fs.unlinkSync(image.path);
-            } catch (err) {
-                console.log("Failed to delete local file:", err);
-            }
+        // Delete local file
+        try {
+            fs.unlinkSync(image.path);
+            console.log("🗑️ Local file deleted");
+        } catch (err) {
+            console.log("⚠️ Failed to delete local file:", err.message);
+        }
 
-            // Update user avatar
-            user.avatar = result.secure_url;
-            await user.save();
+        // Update user avatar
+        user.avatar = result.secure_url;
+        await user.save();
+        console.log("✅ User avatar updated in database");
 
-            return response.status(200).json({ 
-                error: false, 
-                success: true,
-                message: "Avatar updated successfully",
-                avatar: result.secure_url 
-            });
+        return response.status(200).json({ 
+            error: false, 
+            success: true,
+            message: "Avatar updated successfully",
+            avatar: result.secure_url,
+            data: { avatar: result.secure_url }
         });
 
     } catch (error) {
-        console.log("Avatar upload error:", error);
+        console.error("❌ Avatar upload error:", error);
+        
+        // Clean up local file if exists
+        if (request.file?.path) {
+            try {
+                fs.unlinkSync(request.file.path);
+            } catch (err) {
+                // Ignore cleanup errors
+            }
+        }
+
         return response.status(500).json({
-            message: error.message || error,
-            error: true, success: false
+            message: error.message || "Failed to upload avatar",
+            error: true, 
+            success: false
         });
     }
 }
