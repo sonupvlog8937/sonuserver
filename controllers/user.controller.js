@@ -123,6 +123,11 @@ async function createDefaultGoMarketStore({ seller, role, marketId, storeName, s
 }
 
 const sendVerificationOtpEmail = async ({ email, name, otp, subject }) => {
+    // 🔑 DEV MODE - Log OTP for testing
+    if (process.env.NODE_ENV === 'development') {
+        console.log('🔑 DEV OTP for', email, '→', otp);
+    }
+    
     const sent = await sendEmailFun({
         sendTo: email,
         subject: subject || `Verify your email – ${process.env.STORE_NAME || 'MyStore'}`,
@@ -1918,6 +1923,8 @@ export async function sendRegisterOtpController(request, response) {
     try {
         const { name, email } = request.body;
 
+        console.log('🔹 send-register-otp called with:', { name, email });
+
         if (!name || !email) {
             return response.status(400).json({
                 message: "Name and email are required",
@@ -1927,8 +1934,11 @@ export async function sendRegisterOtpController(request, response) {
         }
 
         const existingUser = await UserModel.findOne({ email });
+        console.log('🔹 Existing user check:', existingUser ? 'User found' : 'User not found');
 
-        if (existingUser) {
+        // If user exists and is already active/verified, they should login instead
+        if (existingUser && existingUser.verify_email === true) {
+            console.log('🔹 User already verified, blocking registration');
             return response.status(400).json({
                 message: "User already registered with this email. Please login instead.",
                 error: true,
@@ -1938,20 +1948,34 @@ export async function sendRegisterOtpController(request, response) {
 
         // Generate 6-digit OTP
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        console.log('🔹 Generated OTP:', otp);
 
-        // Create temporary user with OTP
-        const user = new UserModel({
-            email,
-            password: "temp", // Will be set to null after verification
-            name,
-            register_otp: otp,
-            register_otp_expires: Date.now() + 10 * 60 * 1000, // 10 minutes
-            verify_email: false,
-            status: "Pending"
-        });
+        let user;
+        
+        // If user exists but is pending (verify_email=false), update their OTP
+        if (existingUser && existingUser.verify_email === false) {
+            console.log('🔹 Updating pending user with new OTP');
+            existingUser.name = name;
+            existingUser.register_otp = otp;
+            existingUser.register_otp_expires = Date.now() + 10 * 60 * 1000;
+            user = await existingUser.save();
+        } else {
+            console.log('🔹 Creating new pending user');
+            // Create new temporary user with OTP
+            user = new UserModel({
+                email,
+                password: "temp", // Will be set to null after verification
+                name,
+                register_otp: otp,
+                register_otp_expires: Date.now() + 10 * 60 * 1000, // 10 minutes
+                verify_email: false,
+                status: "Pending"
+            });
+            await user.save();
+            console.log('🔹 New user created with ID:', user._id);
+        }
 
-        await user.save();
-
+        console.log('🔹 Attempting to send email to:', email);
         const emailSent = await sendVerificationOtpEmail({
             email,
             name,
@@ -1959,9 +1983,14 @@ export async function sendRegisterOtpController(request, response) {
             subject: `Registration OTP – ${process.env.STORE_NAME || 'MyStore'}`,
         });
 
+        console.log('🔹 Email sent status:', emailSent ? 'SUCCESS' : 'FAILED');
+
         if (!emailSent) {
-            // Delete the temp user if email fails
-            await UserModel.findByIdAndDelete(user._id);
+            console.log('🔹 Email failed, cleaning up...');
+            // Delete the temp user if email fails (only if newly created)
+            if (!existingUser) {
+                await UserModel.findByIdAndDelete(user._id);
+            }
             return response.status(500).json({
                 message: "Could not send OTP email. Please try again.",
                 error: true,
@@ -1969,6 +1998,7 @@ export async function sendRegisterOtpController(request, response) {
             });
         }
 
+        console.log('🔹 Registration OTP process completed successfully');
         return response.status(200).json({
             message: "OTP sent to your email!",
             error: false,
@@ -1976,6 +2006,7 @@ export async function sendRegisterOtpController(request, response) {
         });
 
     } catch (error) {
+        console.error('❌ send-register-otp error:', error);
         return response.status(500).json({
             message: error.message || error,
             error: true,
