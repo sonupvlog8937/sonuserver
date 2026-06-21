@@ -9,13 +9,11 @@
  */
 const OrderConfirmationEmail = (username, orders) => {
     const storeName  = process.env.STORE_NAME  || 'Zeedaddy';
-    const storeColor = process.env.STORE_COLOR || '#1a1a2e';
+    const darkBg        = '#1a1a2e';
     const storeUrl   = process.env.STORE_URL   || '#';
     const year       = new Date().getFullYear();
 
     const accentColor   = '#e94560';
-    const accentLight   = '#fff0f3';
-    const darkBg        = '#1a1a2e';
     const textDark      = '#0f0f1a';
     const textMid       = '#4a4a6a';
     const textLight     = '#8888aa';
@@ -25,12 +23,19 @@ const OrderConfirmationEmail = (username, orders) => {
 
     const products = Array.isArray(orders?.products) ? orders.products : [];
 
-    const grandTotal = products.reduce((sum, item) => {
+    // Calculate subtotal from products
+    const subTotal = products.reduce((sum, item) => {
         const lineTotal = item?.subTotal
             ? Number(item.subTotal)
             : Number(item?.price || 0) * Number(item?.quantity || 1);
         return sum + lineTotal;
     }, 0);
+
+    // Get order amounts
+    const shippingFee = Number(orders?.shippingFee || 0);
+    const deliveryFee = Number(orders?.deliveryFee || 0);
+    const discountAmount = Number(orders?.discount || 0);
+    const grandTotal = Number(orders?.totalAmt || subTotal + shippingFee + deliveryFee - discountAmount);
 
     const formatINR = (amount) =>
         Number(amount).toLocaleString('en-IN', { style: 'currency', currency: 'INR' });
@@ -228,31 +233,69 @@ const OrderConfirmationEmail = (username, orders) => {
                 <td style="width:50%;">
                   <table width="100%" cellpadding="0" cellspacing="0" border="0"
                          style="background:#f8f8fc;border-radius:12px;overflow:hidden;">
+                    <!-- Subtotal -->
                     <tr>
                       <td style="padding:14px 18px 8px;">
                         <table width="100%" cellpadding="0" cellspacing="0" border="0">
                           <tr>
                             <td style="font-size:12px;color:${textLight};">Subtotal</td>
-                            <td style="text-align:right;font-size:12px;color:${textMid};font-weight:500;">${formatINR(grandTotal)}</td>
+                            <td style="text-align:right;font-size:12px;color:${textMid};font-weight:500;">${formatINR(subTotal)}</td>
                           </tr>
                         </table>
                       </td>
                     </tr>
+                    
+                    <!-- Discount (if applicable) -->
+                    ${discountAmount > 0 ? `
                     <tr>
                       <td style="padding:8px 18px 8px;">
                         <table width="100%" cellpadding="0" cellspacing="0" border="0">
                           <tr>
-                            <td style="font-size:12px;color:${textLight};">Shipping</td>
-                            <td style="text-align:right;font-size:12px;color:${successGreen};font-weight:600;">FREE</td>
+                            <td style="font-size:12px;color:${textLight};">
+                              Discount
+                              ${orders?.coupon ? `<span style="display:inline-block;background:${successGreen}15;color:${successGreen};font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;margin-left:6px;text-transform:uppercase;">${orders.coupon}</span>` : ''}
+                            </td>
+                            <td style="text-align:right;font-size:12px;color:${successGreen};font-weight:700;">-${formatINR(discountAmount)}</td>
                           </tr>
                         </table>
                       </td>
                     </tr>
+                    ` : ''}
+                    
+                    <!-- Shipping Fee -->
+                    <tr>
+                      <td style="padding:8px 18px 8px;">
+                        <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                          <tr>
+                            <td style="font-size:12px;color:${textLight};">Shipping Fee</td>
+                            <td style="text-align:right;font-size:12px;color:${shippingFee > 0 ? textMid : successGreen};font-weight:${shippingFee > 0 ? '500' : '600'};">
+                              ${shippingFee > 0 ? formatINR(shippingFee) : 'FREE'}
+                            </td>
+                          </tr>
+                        </table>
+                      </td>
+                    </tr>
+                    
+                    <!-- Delivery Fee -->
+                    ${deliveryFee > 0 ? `
+                    <tr>
+                      <td style="padding:8px 18px 8px;">
+                        <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                          <tr>
+                            <td style="font-size:12px;color:${textLight};">Delivery Fee</td>
+                            <td style="text-align:right;font-size:12px;color:${textMid};font-weight:500;">${formatINR(deliveryFee)}</td>
+                          </tr>
+                        </table>
+                      </td>
+                    </tr>
+                    ` : ''}
+                    
+                    <!-- Grand Total -->
                     <tr>
                       <td style="padding:10px 18px 14px;border-top:1px solid ${borderColor};">
                         <table width="100%" cellpadding="0" cellspacing="0" border="0">
                           <tr>
-                            <td style="font-size:14px;font-weight:700;color:${textDark};">Total</td>
+                            <td style="font-size:14px;font-weight:700;color:${textDark};">Total Amount</td>
                             <td style="text-align:right;font-size:20px;font-weight:800;color:${accentColor};">${formatINR(grandTotal)}</td>
                           </tr>
                         </table>
