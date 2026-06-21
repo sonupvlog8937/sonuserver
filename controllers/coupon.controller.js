@@ -86,13 +86,15 @@ export const getActiveCouponsController = async (request, response) => {
     const data = coupons.filter(isCouponLive).map((coupon) => ({
       _id: coupon._id,
       code: coupon.code,
+      discount: coupon.value,
+      discountType: coupon.type === "percentage" ? "percentage" : "fixed",
+      minOrder: coupon.minOrderAmount || 0,
+      maxDiscount: coupon.maxDiscountAmount,
+      label: coupon.title || coupon.description,
       title: coupon.title,
       description: coupon.description,
-      type: coupon.type,
-      value: coupon.value,
-      minOrderAmount: coupon.minOrderAmount,
-      maxDiscountAmount: coupon.maxDiscountAmount,
-      expiresAt: coupon.expiresAt,
+      expiryDate: coupon.expiresAt,
+      isActive: coupon.isActive,
       audience: coupon.audience,
       shopId: coupon.shopId,
       restaurantId: coupon.restaurantId,
@@ -100,7 +102,7 @@ export const getActiveCouponsController = async (request, response) => {
       restaurantItemIds: coupon.restaurantItemIds,
     }));
 
-    return response.status(200).json({ success: true, error: false, data });
+    return response.status(200).json(data);
   } catch (error) {
     return response.status(500).json({ success: false, error: true, message: error.message || error });
   }
@@ -108,8 +110,9 @@ export const getActiveCouponsController = async (request, response) => {
 
 export const validateCouponController = async (request, response) => {
   try {
-    const { code = "", orderAmount = 0, shopId, restaurantId, productId, restaurantItemId } = request.body || {};
+    const { code = "", orderAmount = 0, orderTotal = 0, shopId, restaurantId, productId, restaurantItemId } = request.body || {};
     const normalizedCode = String(code).trim().toUpperCase();
+    const totalAmount = Number(orderTotal || orderAmount || 0);
 
     if (!normalizedCode) {
       return response.status(400).json({ success: false, error: true, message: "Coupon code is required" });
@@ -133,12 +136,29 @@ export const validateCouponController = async (request, response) => {
       return response.status(400).json({ success: false, error: true, message: "Coupon is not valid for this item", discountAmount: 0 });
     }
 
-    const result = computeDiscount(coupon, Number(orderAmount || 0));
+    const result = computeDiscount(coupon, totalAmount);
     if (!result.valid) {
       return response.status(400).json({ success: false, error: true, message: result.message, discountAmount: 0 });
     }
 
-    return response.status(200).json({ success: true, error: false, ...result, code: coupon.code });
+    // Return coupon data in application-friendly format
+    return response.status(200).json({ 
+      success: true, 
+      error: false, 
+      message: result.message,
+      discountAmount: result.discountAmount,
+      coupon: {
+        _id: coupon._id,
+        code: coupon.code,
+        discount: result.discountAmount,
+        discountType: coupon.type === "percentage" ? "percentage" : "fixed",
+        minOrder: coupon.minOrderAmount || 0,
+        maxDiscount: coupon.maxDiscountAmount,
+        label: coupon.title || coupon.description,
+        expiryDate: coupon.expiresAt,
+        isActive: coupon.isActive,
+      }
+    });
   } catch (error) {
     return response.status(500).json({ success: false, error: true, message: error.message || error });
   }
