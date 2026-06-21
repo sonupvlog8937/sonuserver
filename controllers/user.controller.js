@@ -184,31 +184,18 @@ export async function registerUserController(request, response) {
 
         const existingUser = await UserModel.findOne({ email });
         if (existingUser) {
-            // Agar user hai but verify nahi kiya → naya OTP bhejo
-            if (existingUser.verify_email === false) {
-                const newOtp = Math.floor(100000 + Math.random() * 900000).toString();
-                existingUser.otp = newOtp;
-                existingUser.otpExpires = Date.now() + 10 * 60 * 1000;
-                await existingUser.save();
-
-                await sendVerificationOtpEmail({
-                    email,
-                    name: existingUser.name,
-                    otp: newOtp,
-                });
-
-                return response.status(200).json({
-                    success: true,
-                    error: false,
-                    message: "OTP resent! Please check your email to verify your account.",
+            // Agar user verify ho chuka hai → error return karo
+            if (existingUser.verify_email === true) {
+                return response.json({
+                    message: "User already registered with this email",
+                    error: true,
+                    success: false
                 });
             }
-
-            return response.json({
-                message: "User already registered with this email",
-                error: true,
-                success: false
-            });
+            
+            // Agar user hai but verify nahi kiya → purana account delete karo aur naya banao
+            // Taki user fresh start kar sake
+            await UserModel.findByIdAndDelete(existingUser._id);
         }
 
         // Generate 6-digit OTP
@@ -224,6 +211,7 @@ export async function registerUserController(request, response) {
             otp: verifyCode,
             otpExpires: Date.now() + 10 * 60 * 1000, // 10 minutes
             verify_email: false,
+            status: "Active", // Set status to Active so user can re-register and get OTP
         });
 
         await user.save();
