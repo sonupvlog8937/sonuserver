@@ -535,7 +535,7 @@ export async function createProduct(request, response) {
 export async function getAllProducts(request, response) {
   try {
     const page = parseInt(request.query.page) || 1;
-    const limit = parseInt(request.query.limit) || 10;
+    const limit = parseInt(request.query.limit) || 25;
     const total = await ProductModel.countDocuments();
     const products = await ProductModel.find()
       .populate("seller", "name email role status storeProfile")
