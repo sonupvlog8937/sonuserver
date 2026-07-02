@@ -25,7 +25,23 @@ import fs from "fs";
 import mongoose from "mongoose";
 
 const SELLER_ROLES = ["SELLER", "GROCERY_SELLER", "RESTAURANT_SELLER"];
-const isSellerRole = (role) => SELLER_ROLES.includes(role);
+
+// All GoMarket shop sellers (use grocery-style product management with GroceryShop model)
+const GO_MARKET_SHOP_SELLERS = [
+  "GROCERY_SELLER",
+  "FASHION_SELLER",
+  "ELECTRONICS_SELLER",
+  "MEDICAL_SELLER",
+  "BEAUTY_SELLER",
+  "HOME_KITCHEN_SELLER",
+  "GIFTS_TOYS_SELLER",
+  "BOOKS_STATIONERY_SELLER",
+  "JEWELLERY_SELLER",
+  "HARDWARE_SELLER",
+  "AUTOMOBILE_SELLER",
+];
+
+const isSellerRole = (role) => SELLER_ROLES.includes(role) || GO_MARKET_SHOP_SELLERS.includes(role);
 
 const resolveRequestRole = async (request) => {
   if (request.currentUser?.role) return request.currentUser.role;
@@ -398,11 +414,12 @@ export async function createProduct(request, response) {
     const imageList = [...new Set([...uploadedImages, ...requestImages, request.body.image].filter(Boolean))];
     const imageUrl = imageList[0] || "";
 
-    if (role === "GROCERY_SELLER") {
+    // All GoMarket shop sellers (Fashion, Electronics, Grocery, etc.) use GroceryShop model
+    if (GO_MARKET_SHOP_SELLERS.includes(role)) {
       const shop = await getSellerGroceryShop(request.userId, request.currentUser.email);
       if (!shop) {
         return response.status(400).json({
-          message: "No grocery shop found. Please complete store setup first.",
+          message: "No shop found. Please complete store setup first.",
           error: true,
           success: false,
         });
@@ -1081,7 +1098,8 @@ export async function getSellerProducts(request, response) {
   try {
     const role = request.currentUser?.role;
 
-    if (role === "GROCERY_SELLER") {
+    // All GoMarket shop sellers (Fashion, Electronics, etc.) use GroceryShop model
+    if (GO_MARKET_SHOP_SELLERS.includes(role)) {
       const shop = await getSellerGroceryShop(request.userId, request.currentUser.email);
       if (!shop) {
         return response.status(200).json({ error: false, success: true, products: [], total: 0 });
@@ -1220,7 +1238,7 @@ export async function getAllProductsBanners(request, response) {
 
 //delete product
 export async function deleteProduct(request, response) {
-  if (request.currentUser?.role === "GROCERY_SELLER") {
+  if (GO_MARKET_SHOP_SELLERS.includes(request.currentUser?.role)) {
     const owned = await assertSellerOwnsGroceryProduct(
       request.params.id,
       request.userId,
@@ -1270,7 +1288,7 @@ export async function deleteMultipleProduct(request, response) {
     return response.status(400).json({ error: true, success: false, message: "Invalid input" });
   }
 
-  if (request.currentUser?.role === "GROCERY_SELLER") {
+  if (GO_MARKET_SHOP_SELLERS.includes(request.currentUser?.role)) {
     const shop = await getSellerGroceryShop(request.userId, request.currentUser.email);
     if (!shop) {
       return response.status(400).json({ error: true, success: false, message: "No grocery shop found" });
@@ -1323,7 +1341,7 @@ export async function getProduct(request, response) {
   try {
     const id = request.params.id;
 
-    if (request.currentUser?.role === "GROCERY_SELLER") {
+    if (GO_MARKET_SHOP_SELLERS.includes(request.currentUser?.role)) {
       const owned = await assertSellerOwnsGroceryProduct(id, request.userId, request.currentUser.email);
       if (!owned) {
         return response.status(404).json({ message: "The product is not found", error: true, success: false });
@@ -1394,7 +1412,7 @@ export async function updateProduct(request, response) {
     const incomingImages = Array.isArray(request.body.images) ? request.body.images.filter(Boolean) : [];
     const imageUrl = incomingImages[0] || request.body.image || "";
 
-    if (request.currentUser?.role === "GROCERY_SELLER") {
+    if (GO_MARKET_SHOP_SELLERS.includes(request.currentUser?.role)) {
       const owned = await assertSellerOwnsGroceryProduct(
         request.params.id,
         request.userId,

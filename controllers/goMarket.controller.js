@@ -35,11 +35,23 @@ const requiredFields = {
   subcategories: ["parentId", "name", "type"],
 };
 
-const SELLER_ROLES = ["SELLER", "GROCERY_SELLER", "RESTAURANT_SELLER"];
+const GO_MARKET_SHOP_SELLER_ROLES = ["GROCERY_SELLER", "FASHION_SELLER", "ELECTRONICS_SELLER", "MEDICAL_SELLER", "BEAUTY_SELLER", "HOME_KITCHEN_SELLER", "GIFTS_TOYS_SELLER", "BOOKS_STATIONERY_SELLER", "JEWELLERY_SELLER", "HARDWARE_SELLER", "AUTOMOBILE_SELLER"];
+const isGoMarketShopSeller = (role) => GO_MARKET_SHOP_SELLER_ROLES.includes(role);
+const SELLER_ROLES = ["SELLER", "RESTAURANT_SELLER", ...GO_MARKET_SHOP_SELLER_ROLES];
 const isSellerRole = (role) => SELLER_ROLES.includes(role);
 const getSellerCategoryType = (role) => {
   if (role === "GROCERY_SELLER") return "grocery";
   if (role === "RESTAURANT_SELLER") return "restaurant";
+  if (role === "FASHION_SELLER") return "fashion";
+  if (role === "ELECTRONICS_SELLER") return "electronics";
+  if (role === "MEDICAL_SELLER") return "medical";
+  if (role === "BEAUTY_SELLER") return "beauty";
+  if (role === "HOME_KITCHEN_SELLER") return "home_kitchen";
+  if (role === "GIFTS_TOYS_SELLER") return "gifts_toys";
+  if (role === "BOOKS_STATIONERY_SELLER") return "books_stationery";
+  if (role === "JEWELLERY_SELLER") return "jewellery";
+  if (role === "HARDWARE_SELLER") return "hardware";
+  if (role === "AUTOMOBILE_SELLER") return "automobile";
   return null;
 };
 const getSellerOwnerIds = async (req) => {
@@ -95,12 +107,12 @@ const assertSellerCanWrite = async (resourceKey, body, req) => {
 
   if (resourceKey === "products") {
     let shopId = body.shopId;
-    if (!shopId && req.currentUser?.role === "GROCERY_SELLER") {
+    if (!shopId && isGoMarketShopSeller(req.currentUser?.role)) {
       const shop = await getSellerGroceryShop(req.userId, req.currentUser.email);
       shopId = shop?._id;
     }
     const shop = await GroceryShop.findOne({ _id: shopId, ownerId: { $in: ownerIds } }).select("_id");
-    if (!shop) throw Object.assign(new Error("Please select your own grocery shop"), { statusCode: 403 });
+    if (!shop) throw Object.assign(new Error("Please select your own shop"), { statusCode: 403 });
     return { ...body, shopId: shop._id };
   }
 
@@ -172,7 +184,7 @@ export const createResource = (resourceKey) => async (req, res) => {
       if (["grocery-shops", "restaurants"].includes(resourceKey)) {
         expectedFields = expectedFields.filter((field) => field !== "ownerId");
       }
-      if (resourceKey === "products" && req.currentUser?.role === "GROCERY_SELLER") {
+      if (resourceKey === "products" && isGoMarketShopSeller(req.currentUser?.role)) {
         expectedFields = expectedFields.filter((field) => field !== "shopId");
       }
       if (resourceKey === "items" && req.currentUser?.role === "RESTAURANT_SELLER") {

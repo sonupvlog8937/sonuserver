@@ -8,6 +8,7 @@ import RestaurantMenu from "../models/restaurantMenu.model.js";
 import RestaurantItem from "../models/restaurantItem.model.js";
 import GoMarketCategory from "../models/goMarketCategory.model.js";
 import GoMarketSubCategory from "../models/goMarketSubCategory.model.js";
+import { haversineKm as geoHaversineKm } from "../utils/geoCoords.js";
 
 export const resources = {
   markets: { model: Market, label: "Market", searchFields: ["name", "city", "state", "pincode"] },
@@ -52,14 +53,7 @@ export const paginate = async (model, filter, query = {}, populate = "") => {
   return { data, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) || 1 } };
 };
 
-export const haversineKm = (lat1, lon1, lat2, lon2) => {
-  const toRad = (value) => (Number(value) * Math.PI) / 180;
-  const earthRadiusKm = 6371;
-  const dLat = toRad(lat2 - lat1);
-  const dLon = toRad(lon2 - lon1);
-  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
-  return earthRadiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-};
+export { geoHaversineKm as haversineKm };
 
 export const findNearbyMarkets = async ({ latitude, longitude, limit = 10 }) => {
   try {
