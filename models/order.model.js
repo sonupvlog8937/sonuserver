@@ -133,7 +133,7 @@ const orderSchema = new mongoose.Schema(
       earningCredited: { type: Boolean, default: false },
       status: {
         type: String,
-        enum: ["unassigned", "assigned", "confirmed", "otp_sent", "delivered"],
+        enum: ["unassigned", "broadcast", "assigned", "confirmed", "otp_sent", "delivered"],
         default: "unassigned",
       },
     },

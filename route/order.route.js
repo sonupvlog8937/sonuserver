@@ -1,7 +1,7 @@
 import { Router } from "express";
 import auth from "../middlewares/auth.js";
 import authorizeRole from "../middlewares/authorizeRole.js";
-import {  captureOrderPaypalController, createOrderController, createOrderPaypalController, deleteOrder, getOrderDetailsController, getTotalOrdersCountController, getUserOrderDetailsController, totalSalesController, totalUsersController, updateOrderStatusController, getSellerOrdersController, getSellerDashboardStats, requestOrderReturnController, updateReturnRefundStatusController, listDeliveryRidersController, assignOrderToRiderController, getRiderOrdersController, getRiderStatsController, getRiderRecentDeliveriesController, confirmRiderOrderController, sendDeliveryOtpController, deliverRiderOrderController, payRiderWalletController } from "../controllers/order.controller.js";
+import {  captureOrderPaypalController, createOrderController, createOrderPaypalController, deleteOrder, getOrderDetailsController, getTotalOrdersCountController, getUserOrderDetailsController, totalSalesController, totalUsersController, updateOrderStatusController, getSellerOrdersController, getSellerDashboardStats, requestOrderReturnController, updateReturnRefundStatusController, listDeliveryRidersController, assignOrderToRiderController, broadcastOrderToMarketController, getRiderOrdersController, getRiderStatsController, getRiderRecentDeliveriesController, confirmRiderOrderController, sendDeliveryOtpController, deliverRiderOrderController, payRiderWalletController } from "../controllers/order.controller.js";
 const orderRouter = Router();
 
 const GO_MARKET_SHOP_SELLERS = [
@@ -30,6 +30,7 @@ orderRouter.put('/return-refund-status/:id',auth,authorizeRole('ADMIN',...ALL_SE
 orderRouter.get('/seller/dashboard-stats', auth, authorizeRole(...ALL_SELLER_ROLES), getSellerDashboardStats)
 orderRouter.get('/delivery-riders', auth, authorizeRole('ADMIN',...QUICK_COMMERCE_SELLERS), listDeliveryRidersController)
 orderRouter.put('/assign-rider/:id', auth, authorizeRole('ADMIN',...QUICK_COMMERCE_SELLERS), assignOrderToRiderController)
+orderRouter.put('/broadcast-order/:id', auth, authorizeRole('ADMIN',...QUICK_COMMERCE_SELLERS), broadcastOrderToMarketController)
 orderRouter.get('/rider/orders', auth, authorizeRole('DELIVERY_RIDER'), getRiderOrdersController)
 orderRouter.get('/rider/stats', auth, authorizeRole('DELIVERY_RIDER'), getRiderStatsController)
 orderRouter.get('/rider/recent-deliveries', auth, authorizeRole('DELIVERY_RIDER'), getRiderRecentDeliveriesController)

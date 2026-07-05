@@ -1166,6 +1166,54 @@ export const listDeliveryRidersController = async (request, response) => {
     }
 };
 
+export const broadcastOrderToMarketController = async (request, response) => {
+    try {
+        const order = await OrderModel.findOne({ _id: request.params.id, "products.sellerId": request.userId });
+        if (!order && request.currentUser?.role !== "ADMIN") {
+            return response.status(404).json({ success: false, error: true, message: "Seller order not found" });
+        }
+
+        const targetOrder = order || await OrderModel.findById(request.params.id);
+        if (!targetOrder) return response.status(404).json({ success: false, error: true, message: "Order not found" });
+
+        if (targetOrder.deliveryAssignment?.riderId || ["assigned", "confirmed", "otp_sent", "delivered"].includes(targetOrder.deliveryAssignment?.status)) {
+            return response.status(400).json({ success: false, error: true, message: "Order is already assigned or in delivery" });
+        }
+
+        const marketIds = request.currentUser?.role === "ADMIN"
+            ? []
+            : await getSellerMarketIds(request.userId, request.currentUser?.email);
+
+        const riderQuery = { role: "DELIVERY_RIDER", status: "Active" };
+        if (request.currentUser?.role !== "ADMIN") {
+            if (!marketIds.length) {
+                return response.status(400).json({ success: false, error: true, message: "No active market found for this seller" });
+            }
+            riderQuery["riderProfile.marketId"] = { $in: marketIds };
+        }
+
+        const activeRiders = await UserModel.find(riderQuery).lean();
+        if (!activeRiders.length) {
+            return response.status(400).json({ success: false, error: true, message: "No active riders found in your market" });
+        }
+
+        targetOrder.deliveryAssignment = {
+            ...(targetOrder.deliveryAssignment || {}),
+            riderId: null,
+            assignedBy: request.userId,
+            assignedAt: new Date(),
+            earningAmount: RIDER_DELIVERY_FEE,
+            status: "broadcast",
+        };
+        targetOrder.order_status = "assigned_to_rider";
+        await targetOrder.save();
+
+        return response.json({ success: true, error: false, message: "Order broadcast to market riders", data: targetOrder });
+    } catch (error) {
+        return response.status(500).json({ success: false, error: true, message: error.message || error });
+    }
+};
+
 export const assignOrderToRiderController = async (request, response) => {
     try {
         const { riderId } = request.body || {};
@@ -1209,9 +1257,48 @@ export const assignOrderToRiderController = async (request, response) => {
 export const getRiderOrdersController = async (request, response) => {
     try {
         const status = String(request.query.status || "");
-        const filter = { "deliveryAssignment.riderId": request.userId };
-        if (status) filter["deliveryAssignment.status"] = status;
-        const orders = await OrderModel.find(filter)
+        const rider = await UserModel.findById(request.userId).select("riderProfile.marketId").lean();
+        const riderMarketId = rider?.riderProfile?.marketId;
+
+        const assignedFilter = { "deliveryAssignment.riderId": request.userId };
+        if (status) assignedFilter["deliveryAssignment.status"] = status;
+
+        const filters = [assignedFilter];
+
+        if (riderMarketId) {
+            const sellerRoles = [
+                "GROCERY_SELLER",
+                "FASHION_SELLER",
+                "ELECTRONICS_SELLER",
+                "MEDICAL_SELLER",
+                "BEAUTY_SELLER",
+                "HOME_KITCHEN_SELLER",
+                "GIFTS_TOYS_STATIONERY_SELLER",
+                "BOOKS_STATIONERY_SELLER",
+                "JEWELLERY_SELLER",
+                "HARDWARE_SELLER",
+                "AUTOMOBILE_SELLER",
+                "RESTAURANT_SELLER",
+            ];
+            const marketSellers = await UserModel.find({
+                role: { $in: sellerRoles },
+                status: "Active",
+                "storeProfile.marketId": riderMarketId,
+            }).select("_id").lean();
+            const sellerIds = marketSellers.map((seller) => seller._id);
+
+            if (sellerIds.length) {
+                const broadcastFilter = {
+                    "deliveryAssignment.status": "broadcast",
+                    "products.sellerId": { $in: sellerIds },
+                };
+                if (status) broadcastFilter["deliveryAssignment.status"] = status;
+                filters.push(broadcastFilter);
+            }
+        }
+
+        const query = filters.length === 1 ? filters[0] : { $or: filters };
+        const orders = await OrderModel.find(query)
             .sort({ createdAt: -1 })
             .populate("delivery_address userId products.sellerId")
             .lean();
@@ -1284,12 +1371,61 @@ export const getRiderRecentDeliveriesController = async (request, response) => {
 
 export const confirmRiderOrderController = async (request, response) => {
     try {
-        const order = await OrderModel.findOne({ _id: request.params.id, "deliveryAssignment.riderId": request.userId });
-        if (!order) return response.status(404).json({ success: false, error: true, message: "Assigned order not found" });
-        order.deliveryAssignment.status = "confirmed";
-        order.deliveryAssignment.confirmedAt = new Date();
-        order.order_status = "out_for_delivery";
-        await order.save();
+        const rider = await UserModel.findById(request.userId).select("riderProfile.marketId").lean();
+        const riderMarketId = rider?.riderProfile?.marketId;
+
+        const sellerRoles = [
+            "GROCERY_SELLER",
+            "FASHION_SELLER",
+            "ELECTRONICS_SELLER",
+            "MEDICAL_SELLER",
+            "BEAUTY_SELLER",
+            "HOME_KITCHEN_SELLER",
+            "GIFTS_TOYS_SELLER",
+            "BOOKS_STATIONERY_SELLER",
+            "JEWELLERY_SELLER",
+            "HARDWARE_SELLER",
+            "AUTOMOBILE_SELLER",
+            "RESTAURANT_SELLER",
+        ];
+        let sellerIds = [];
+
+        if (riderMarketId) {
+            const marketSellers = await UserModel.find({
+                role: { $in: sellerRoles },
+                status: "Active",
+                "storeProfile.marketId": riderMarketId,
+            }).select("_id").lean();
+            sellerIds = marketSellers.map((seller) => seller._id);
+        }
+
+        const searchConditions = [
+            { "deliveryAssignment.riderId": request.userId, "deliveryAssignment.status": { $in: ["assigned", "broadcast"] } },
+        ];
+        if (sellerIds.length) {
+            searchConditions.push({ "deliveryAssignment.status": "broadcast", "products.sellerId": { $in: sellerIds } });
+        }
+
+        const order = await OrderModel.findOneAndUpdate(
+            {
+                _id: request.params.id,
+                $or: searchConditions,
+            },
+            {
+                $set: {
+                    "deliveryAssignment.riderId": request.userId,
+                    "deliveryAssignment.status": "confirmed",
+                    "deliveryAssignment.confirmedAt": new Date(),
+                    order_status: "out_for_delivery",
+                },
+            },
+            { new: true }
+        );
+
+        if (!order) {
+            return response.status(404).json({ success: false, error: true, message: "Assigned or available order not found" });
+        }
+
         return response.json({ success: true, error: false, message: "Order confirmed", data: order });
     } catch (error) {
         return response.status(500).json({ success: false, error: true, message: error.message || error });
