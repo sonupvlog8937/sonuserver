@@ -1905,7 +1905,10 @@ export async function sendLoginOtpController(request, response) {
             });
         }
 
-        if (user.status !== "Active") {
+        // Allow sending OTP for users who haven't verified their email yet
+        // (they may be in a 'Pending' state). Only block if the account
+        // is non-active and already verified (i.e. needs admin action).
+        if (user.status !== "Active" && user.verify_email === true) {
             return response.status(400).json({
                 message: "Account is not active. Please contact admin.",
                 error: true,
@@ -1972,7 +1975,10 @@ export async function verifyLoginOtpController(request, response) {
             });
         }
 
-        if (user.status !== "Active") {
+        // Same as above: allow verification attempts for unverified (Pending)
+        // accounts so users can complete registration via OTP. Block only
+        // when the account is non-active but already verified.
+        if (user.status !== "Active" && user.verify_email === true) {
             return response.status(400).json({
                 message: "Account is not active. Please contact admin.",
                 error: true,
