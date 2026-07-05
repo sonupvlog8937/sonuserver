@@ -78,7 +78,7 @@ export const findNearbyMarkets = async ({ latitude, longitude, limit = 10 }) => 
     // Calculate distance and sort by nearest. Guard against null/invalid haversine results.
     const nearby = marketsWithCoords
       .map((market) => {
-        const dist = haversineKm(latitude, longitude, market.latitude, market.longitude);
+        const dist = geoHaversineKm(latitude, longitude, market.latitude, market.longitude);
         if (dist == null || Number.isNaN(dist)) return null;
         return {
           ...market,
