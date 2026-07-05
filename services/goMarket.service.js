@@ -75,12 +75,17 @@ export const findNearbyMarkets = async ({ latitude, longitude, limit = 10 }) => 
       return markets.slice(0, limit); // Fallback to all markets
     }
 
-    // Calculate distance and sort by nearest
+    // Calculate distance and sort by nearest. Guard against null/invalid haversine results.
     const nearby = marketsWithCoords
-      .map((market) => ({
-        ...market,
-        distanceKm: Number(haversineKm(latitude, longitude, market.latitude, market.longitude).toFixed(2))
-      }))
+      .map((market) => {
+        const dist = haversineKm(latitude, longitude, market.latitude, market.longitude);
+        if (dist == null || Number.isNaN(dist)) return null;
+        return {
+          ...market,
+          distanceKm: Number(dist.toFixed(2)),
+        };
+      })
+      .filter(Boolean)
       .sort((a, b) => a.distanceKm - b.distanceKm)
       .slice(0, limit);
 
