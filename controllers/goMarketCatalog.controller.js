@@ -245,7 +245,7 @@ const mapGroceryOutlet = (shop, userId = null, baseUrl = "", userLat = null, use
   const distanceDisplay = formatDistanceKm(distanceKm);
   const estimatedTime = distanceKm == null
     ? null  // no distance = no time shown
-    : estimateDeliveryMinutes(distanceKm, shop.deliveryMinutes || 10);
+    : estimateDeliveryMinutes(distanceKm, Math.max(0, (shop.deliveryMinutes || 10) - 10));
 
   return {
     _id: shop._id,
@@ -289,7 +289,7 @@ const mapRestaurantOutlet = (r, userId = null, baseUrl = "", userLat = null, use
   const distanceDisplay = formatDistanceKm(distanceKm);
   const estimatedTime = distanceKm == null
     ? null  // no distance = no time shown
-    : estimateDeliveryMinutes(distanceKm, 20);
+    : estimateDeliveryMinutes(distanceKm, 10);
 
   return {
     _id: r._id,
