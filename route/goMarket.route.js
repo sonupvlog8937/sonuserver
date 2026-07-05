@@ -190,9 +190,14 @@ router.put("/seller/grocery-shop", auth, authorizeRole(...GO_MARKET_SHOP_SELLERS
   try {
     const GroceryShop = (await import("../models/groceryShop.model.js")).default;
     const { shopName, shopBanner, shopLogo, address, description, latitude, longitude, deliveryMinutes } = req.body;
+    const payload = pickDefined({ shopName, shopBanner, shopLogo, address, description, latitude, longitude });
+    if (deliveryMinutes !== undefined) {
+      const minutes = Number(deliveryMinutes) || 15;
+      payload.deliveryMinutes = Math.max(15, Math.min(120, minutes));
+    }
     const shop = await GroceryShop.findOneAndUpdate(
       await sellerOwnerFilter(req),
-      pickDefined({ shopName, shopBanner, shopLogo, address, description, latitude, longitude, deliveryMinutes }),
+      payload,
       { new: true, lean: true, runValidators: true }
     );
     if (!shop) return res.json({ success: false, message: "Shop not found" });
@@ -224,19 +229,23 @@ router.put("/seller/restaurant", auth, authorizeRole("RESTAURANT_SELLER"), async
   try {
     const Restaurant = (await import("../models/restaurant.model.js")).default;
     const { shopName, shopBanner, shopLogo, restaurantName, restaurantBanner, restaurantLogo, address, description, latitude, longitude, deliveryMinutes, avgPrepMinutes } = req.body;
+    const payload = pickDefined({
+      restaurantName: restaurantName || shopName,
+      restaurantBanner: restaurantBanner ?? shopBanner,
+      restaurantLogo: restaurantLogo ?? shopLogo,
+      address,
+      description,
+      latitude,
+      longitude,
+      avgPrepMinutes,
+    });
+    if (deliveryMinutes !== undefined) {
+      const minutes = Number(deliveryMinutes) || 25;
+      payload.deliveryMinutes = Math.max(25, Math.min(120, minutes));
+    }
     const restaurant = await Restaurant.findOneAndUpdate(
       await sellerOwnerFilter(req),
-      pickDefined({
-        restaurantName: restaurantName || shopName,
-        restaurantBanner: restaurantBanner ?? shopBanner,
-        restaurantLogo: restaurantLogo ?? shopLogo,
-        address,
-        description,
-        latitude,
-        longitude,
-        deliveryMinutes,
-        avgPrepMinutes,
-      }),
+      payload,
       { new: true, lean: true, runValidators: true }
     );
     if (!restaurant) return res.json({ success: false, message: "Restaurant not found" });
