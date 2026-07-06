@@ -1898,17 +1898,18 @@ export async function sendLoginOtpController(request, response) {
         const user = await UserModel.findOne({ email });
 
         if (!user) {
-            return response.status(400).json({
+            return response.status(200).json({
                 message: "User not found. Please register first.",
                 error: true,
-                success: false
+                success: false,
+                registrationPending: true
             });
         }
 
         // If the user exists but has not finished registration verification,
         // prompt the client to send a registration OTP instead of login OTP.
         if (user.verify_email === false) {
-            return response.status(400).json({
+            return response.status(200).json({
                 message: "User not verified. Please verify registration OTP or request a new registration OTP.",
                 error: true,
                 success: false,
