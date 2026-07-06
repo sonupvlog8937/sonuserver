@@ -154,6 +154,10 @@ async function createDefaultGoMarketStore({ seller, role, marketId, storeName, s
     return { owner, store, market };
 }
 
+const escapeRegex = (value) => String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
+
 const sendVerificationOtpEmail = async ({ email, name, otp, subject }) => {
     // 🔑 DEV MODE - Log OTP for testing
     if (process.env.NODE_ENV === 'development') {
@@ -1885,7 +1889,7 @@ export async function registerSellerController(request, response) {
 // Route: POST /api/user/send-login-otp
 export async function sendLoginOtpController(request, response) {
     try {
-        const { email } = request.body;
+        const email = normalizeEmail(request.body.email);
 
         if (!email) {
             return response.status(400).json({
@@ -1895,7 +1899,7 @@ export async function sendLoginOtpController(request, response) {
             });
         }
 
-        const user = await UserModel.findOne({ email });
+        const user = await UserModel.findOne({ email: { $regex: `^${escapeRegex(email)}$`, $options: 'i' } });
 
         if (!user) {
             return response.status(400).json({
@@ -1955,7 +1959,8 @@ export async function sendLoginOtpController(request, response) {
 // Route: POST /api/user/verify-login-otp
 export async function verifyLoginOtpController(request, response) {
     try {
-        const { email, otp } = request.body;
+        const email = normalizeEmail(request.body.email);
+        const { otp } = request.body;
 
         if (!email || !otp) {
             return response.status(400).json({
@@ -1965,7 +1970,7 @@ export async function verifyLoginOtpController(request, response) {
             });
         }
 
-        const user = await UserModel.findOne({ email });
+        const user = await UserModel.findOne({ email: { $regex: `^${escapeRegex(email)}$`, $options: 'i' } });
 
         if (!user) {
             return response.status(400).json({
@@ -2023,7 +2028,8 @@ export async function verifyLoginOtpController(request, response) {
 // Route: POST /api/user/send-register-otp
 export async function sendRegisterOtpController(request, response) {
     try {
-        const { name, email } = request.body;
+        const name = String(request.body.name || "").trim();
+        const email = normalizeEmail(request.body.email);
 
         console.log('🔹 send-register-otp called with:', { name, email });
 
@@ -2035,7 +2041,7 @@ export async function sendRegisterOtpController(request, response) {
             });
         }
 
-        const existingUser = await UserModel.findOne({ email });
+        const existingUser = await UserModel.findOne({ email: { $regex: `^${escapeRegex(email)}$`, $options: 'i' } });
         console.log('🔹 Existing user check:', existingUser ? 'User found' : 'User not found');
 
         // If user exists and is already active/verified, they should login instead
@@ -2120,7 +2126,9 @@ export async function sendRegisterOtpController(request, response) {
 // Route: POST /api/user/verify-register-otp
 export async function verifyRegisterOtpController(request, response) {
     try {
-        const { name, email, otp } = request.body;
+        const name = String(request.body.name || "").trim();
+        const email = normalizeEmail(request.body.email);
+        const { otp } = request.body;
 
         if (!name || !email || !otp) {
             return response.status(400).json({
@@ -2130,7 +2138,7 @@ export async function verifyRegisterOtpController(request, response) {
             });
         }
 
-        const user = await UserModel.findOne({ email });
+        const user = await UserModel.findOne({ email: { $regex: `^${escapeRegex(email)}$`, $options: 'i' } });
 
         if (!user) {
             return response.status(400).json({
