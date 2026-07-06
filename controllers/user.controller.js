@@ -1905,9 +1905,17 @@ export async function sendLoginOtpController(request, response) {
             });
         }
 
-        // Allow sending OTP for users who haven't verified their email yet
-        // (they may be in a 'Pending' state). Only block if the account
-        // is non-active and already verified (i.e. needs admin action).
+        // If the user exists but has not finished registration verification,
+        // prompt the client to send a registration OTP instead of login OTP.
+        if (user.verify_email === false) {
+            return response.status(400).json({
+                message: "User not verified. Please verify registration OTP or request a new registration OTP.",
+                error: true,
+                success: false
+            });
+        }
+
+        // Only block users who are inactive/suspended after verification.
         if (user.status !== "Active") {
             return response.status(400).json({
                 message: "Account is not active. Please contact admin.",
@@ -2071,7 +2079,7 @@ export async function sendRegisterOtpController(request, response) {
                 register_otp: otp,
                 register_otp_expires: Date.now() + 10 * 60 * 1000, // 10 minutes
                 verify_email: false,
-                status: "Active"
+                status: "Pending"
             });
             await user.save();
             console.log('🔹 New user created with ID:', user._id);
