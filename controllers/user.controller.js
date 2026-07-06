@@ -2071,7 +2071,7 @@ export async function sendRegisterOtpController(request, response) {
                 register_otp: otp,
                 register_otp_expires: Date.now() + 10 * 60 * 1000, // 10 minutes
                 verify_email: false,
-                status: "Pending"
+                status: "Active"
             });
             await user.save();
             console.log('🔹 New user created with ID:', user._id);
