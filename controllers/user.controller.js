@@ -163,7 +163,7 @@ const sendVerificationOtpEmail = async ({ email, name, otp, subject }) => {
     const sent = await sendEmailFun({
         sendTo: email,
         subject: subject || `Verify your email – ${process.env.STORE_NAME || 'MyStore'}`,
-        text: `Your one-time code is ${otp}. It expires in 10 minutes. Use this code to verify your email address.`,
+        text: `Your OTP is: ${otp}. It expires in 10 minutes.`,
         html: VerificationEmail(name, otp),
     });
 

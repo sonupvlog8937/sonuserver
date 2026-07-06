@@ -59,12 +59,8 @@ const VerificationEmail = (username, otp) => {
             </p>
             <p style="margin:0 0 24px;font-size:15px;line-height:1.7;color:#555;">
               Thank you for registering with <strong>${storeName}</strong>.
-              Your one-time verification code is <strong>${otp}</strong>.
+              Use the OTP below to verify your email address.
               This code is valid for <strong>10 minutes</strong>.
-            </p>
-
-            <p style="margin:0 0 24px;font-size:15px;line-height:1.7;color:#555;">
-              If your email app supports autofill, your code may be detected automatically from this message.
             </p>
 
             <!-- OTP Box -->
