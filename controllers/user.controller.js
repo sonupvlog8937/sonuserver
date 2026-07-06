@@ -154,10 +154,6 @@ async function createDefaultGoMarketStore({ seller, role, marketId, storeName, s
     return { owner, store, market };
 }
 
-const escapeRegex = (value) => String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
-
 const sendVerificationOtpEmail = async ({ email, name, otp, subject }) => {
     // 🔑 DEV MODE - Log OTP for testing
     if (process.env.NODE_ENV === 'development') {
@@ -1889,7 +1885,7 @@ export async function registerSellerController(request, response) {
 // Route: POST /api/user/send-login-otp
 export async function sendLoginOtpController(request, response) {
     try {
-        const email = normalizeEmail(request.body.email);
+        const { email } = request.body;
 
         if (!email) {
             return response.status(400).json({
@@ -1899,7 +1895,7 @@ export async function sendLoginOtpController(request, response) {
             });
         }
 
-        const user = await UserModel.findOne({ email: { $regex: `^${escapeRegex(email)}$`, $options: 'i' } });
+        const user = await UserModel.findOne({ email });
 
         if (!user) {
             return response.status(400).json({
@@ -1912,7 +1908,7 @@ export async function sendLoginOtpController(request, response) {
         // Allow sending OTP for users who haven't verified their email yet
         // (they may be in a 'Pending' state). Only block if the account
         // is non-active and already verified (i.e. needs admin action).
-        if (user.status !== "Active" && user.verify_email === true) {
+        if (user.status !== "Active") {
             return response.status(400).json({
                 message: "Account is not active. Please contact admin.",
                 error: true,
@@ -1959,8 +1955,7 @@ export async function sendLoginOtpController(request, response) {
 // Route: POST /api/user/verify-login-otp
 export async function verifyLoginOtpController(request, response) {
     try {
-        const email = normalizeEmail(request.body.email);
-        const { otp } = request.body;
+        const { email, otp } = request.body;
 
         if (!email || !otp) {
             return response.status(400).json({
@@ -1970,7 +1965,7 @@ export async function verifyLoginOtpController(request, response) {
             });
         }
 
-        const user = await UserModel.findOne({ email: { $regex: `^${escapeRegex(email)}$`, $options: 'i' } });
+        const user = await UserModel.findOne({ email });
 
         if (!user) {
             return response.status(400).json({
@@ -1983,7 +1978,7 @@ export async function verifyLoginOtpController(request, response) {
         // Same as above: allow verification attempts for unverified (Pending)
         // accounts so users can complete registration via OTP. Block only
         // when the account is non-active but already verified.
-        if (user.status !== "Active" && user.verify_email === true) {
+        if (user.status !== "Active") {
             return response.status(400).json({
                 message: "Account is not active. Please contact admin.",
                 error: true,
@@ -2028,8 +2023,7 @@ export async function verifyLoginOtpController(request, response) {
 // Route: POST /api/user/send-register-otp
 export async function sendRegisterOtpController(request, response) {
     try {
-        const name = String(request.body.name || "").trim();
-        const email = normalizeEmail(request.body.email);
+        const { name, email } = request.body;
 
         console.log('🔹 send-register-otp called with:', { name, email });
 
@@ -2041,7 +2035,7 @@ export async function sendRegisterOtpController(request, response) {
             });
         }
 
-        const existingUser = await UserModel.findOne({ email: { $regex: `^${escapeRegex(email)}$`, $options: 'i' } });
+        const existingUser = await UserModel.findOne({ email });
         console.log('🔹 Existing user check:', existingUser ? 'User found' : 'User not found');
 
         // If user exists and is already active/verified, they should login instead
@@ -2126,9 +2120,7 @@ export async function sendRegisterOtpController(request, response) {
 // Route: POST /api/user/verify-register-otp
 export async function verifyRegisterOtpController(request, response) {
     try {
-        const name = String(request.body.name || "").trim();
-        const email = normalizeEmail(request.body.email);
-        const { otp } = request.body;
+        const { name, email, otp } = request.body;
 
         if (!name || !email || !otp) {
             return response.status(400).json({
@@ -2138,7 +2130,7 @@ export async function verifyRegisterOtpController(request, response) {
             });
         }
 
-        const user = await UserModel.findOne({ email: { $regex: `^${escapeRegex(email)}$`, $options: 'i' } });
+        const user = await UserModel.findOne({ email });
 
         if (!user) {
             return response.status(400).json({
