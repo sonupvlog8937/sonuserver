@@ -1911,7 +1911,8 @@ export async function sendLoginOtpController(request, response) {
             return response.status(400).json({
                 message: "User not verified. Please verify registration OTP or request a new registration OTP.",
                 error: true,
-                success: false
+                success: false,
+                registrationPending: true
             });
         }
 
