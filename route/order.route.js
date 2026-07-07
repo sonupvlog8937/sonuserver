@@ -1,7 +1,7 @@
 import { Router } from "express";
 import auth from "../middlewares/auth.js";
 import authorizeRole from "../middlewares/authorizeRole.js";
-import {  captureOrderPaypalController, createOrderController, createOrderPaypalController, deleteOrder, getOrderDetailsController, getTotalOrdersCountController, getUserOrderDetailsController, totalSalesController, totalUsersController, updateOrderStatusController, getSellerOrdersController, getSellerDashboardStats, requestOrderReturnController, updateReturnRefundStatusController, listDeliveryRidersController, assignOrderToRiderController, broadcastOrderToMarketController, getRiderOrdersController, getRiderStatsController, getRiderRecentDeliveriesController, confirmRiderOrderController, sendDeliveryOtpController, deliverRiderOrderController, payRiderWalletController } from "../controllers/order.controller.js";
+import {  captureOrderPaypalController, createOrderController, createOrderPaypalController, deleteOrder, getOrderDetailsController, getTotalOrdersCountController, getUserOrderDetailsController, totalSalesController, totalUsersController, updateOrderStatusController, getSellerOrdersController, getSellerDashboardStats, requestOrderReturnController, updateReturnRefundStatusController, listDeliveryRidersController, assignOrderToRiderController, broadcastOrderToMarketController, getRiderOrdersController, getRiderStatsController, getRiderRecentDeliveriesController, confirmRiderOrderController, sendDeliveryOtpController, deliverRiderOrderController, cancelRiderOrderController, payRiderWalletController } from "../controllers/order.controller.js";
 const orderRouter = Router();
 
 const GO_MARKET_SHOP_SELLERS = [
@@ -37,6 +37,7 @@ orderRouter.get('/rider/recent-deliveries', auth, authorizeRole('DELIVERY_RIDER'
 orderRouter.put('/rider/orders/:id/confirm', auth, authorizeRole('DELIVERY_RIDER'), confirmRiderOrderController)
 orderRouter.post('/rider/orders/:id/send-otp', auth, authorizeRole('DELIVERY_RIDER'), sendDeliveryOtpController)
 orderRouter.put('/rider/orders/:id/deliver', auth, authorizeRole('DELIVERY_RIDER'), deliverRiderOrderController)
+orderRouter.put('/rider/orders/:id/cancel', auth, authorizeRole('DELIVERY_RIDER'), cancelRiderOrderController)
 orderRouter.post('/admin/rider-payout', auth, authorizeRole('ADMIN'), payRiderWalletController)
 
 export default orderRouter;

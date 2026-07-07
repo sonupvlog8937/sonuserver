@@ -1136,42 +1136,16 @@ export async function getSellerDashboardStats(request, response) {
         });
     }
 }
-const RIDER_DELIVERY_FEE = 10;
-const ACTIVE_DELIVERY_STATUSES = ["assigned", "confirmed", "otp_sent"];
-
-export const findActiveDeliveryOrderForRider = async (riderId, excludeOrderId = null) => {
-    if (!riderId) return null;
-
-    const query = {
-        "deliveryAssignment.riderId": riderId,
-        "deliveryAssignment.status": { $in: ACTIVE_DELIVERY_STATUSES },
-    };
-
-    if (excludeOrderId) {
-        query._id = { $ne: excludeOrderId };
-    }
-
-    return OrderModel.findOne(query).select("_id deliveryAssignment.status").lean();
-};
+const RIDER_DELIVERY_FEE = 20;
 
 const getSellerMarketIds = async (sellerId, sellerEmail = "") => {
-    const marketIds = new Set();
-
-    const seller = await UserModel.findById(sellerId).select("storeProfile.marketId").lean();
-    if (seller?.storeProfile?.marketId) marketIds.add(String(seller.storeProfile.marketId));
-
     const ownerQuery = sellerEmail ? { $or: [{ userId: sellerId }, { email: sellerEmail }] } : { userId: sellerId };
     const ownerIds = (await ShopOwner.find(ownerQuery).select("_id").lean()).map((o) => o._id);
     const [shops, restaurants] = await Promise.all([
         GroceryShop.find({ ownerId: { $in: ownerIds } }).select("marketId").lean(),
         Restaurant.find({ ownerId: { $in: ownerIds } }).select("marketId").lean(),
     ]);
-
-    [...shops, ...restaurants].forEach((item) => {
-        if (item?.marketId) marketIds.add(String(item.marketId));
-    });
-
-    return [...marketIds];
+    return [...shops, ...restaurants].map((o) => o.marketId).filter(Boolean).map(String);
 };
 
 export const listDeliveryRidersController = async (request, response) => {
@@ -1263,15 +1237,6 @@ export const assignOrderToRiderController = async (request, response) => {
             }
         }
 
-        const existingActiveOrder = await findActiveDeliveryOrderForRider(rider._id, targetOrder._id);
-        if (existingActiveOrder) {
-            return response.status(400).json({
-                success: false,
-                error: true,
-                message: "This rider already has an active delivery. Complete the current order first.",
-            });
-        }
-
         targetOrder.deliveryAssignment = {
             ...(targetOrder.deliveryAssignment || {}),
             riderId: rider._id,
@@ -1292,26 +1257,25 @@ export const assignOrderToRiderController = async (request, response) => {
 export const getRiderOrdersController = async (request, response) => {
     try {
         const status = String(request.query.status || "");
+        const page = parseInt(request.query.page) || 1;
+        const limit = parseInt(request.query.limit) || 20;
+        const skip = (page - 1) * limit;
+        
         const rider = await UserModel.findById(request.userId).select("riderProfile.marketId").lean();
         const riderMarketId = rider?.riderProfile?.marketId;
 
-        const activeOrderStatuses = ["assigned", "confirmed", "otp_sent"];
-        const activeOrderMatch = {
-            "deliveryAssignment.riderId": request.userId,
-            "deliveryAssignment.status": { $in: activeOrderStatuses },
-        };
-        const hasActiveOrder = await OrderModel.exists(activeOrderMatch);
+        const isAvailableTab = status === "broadcast";
+        const isMyOrdersTab = !status || status === "assigned";
 
-        const assignedFilter = { "deliveryAssignment.riderId": request.userId };
-        if (status) {
-            assignedFilter["deliveryAssignment.status"] = status === "assigned"
-                ? { $in: activeOrderStatuses }
-                : status;
+        const filters = [];
+
+        if (isMyOrdersTab) {
+            const assignedFilter = { "deliveryAssignment.riderId": request.userId };
+            assignedFilter["deliveryAssignment.status"] = { $in: ["confirmed", "otp_sent", "delivered", "cancelled"] };
+            filters.push(assignedFilter);
         }
 
-        const filters = [assignedFilter];
-
-        if (!hasActiveOrder && riderMarketId) {
+        if (riderMarketId && isAvailableTab) {
             const sellerRoles = [
                 "GROCERY_SELLER",
                 "FASHION_SELLER",
@@ -1337,25 +1301,40 @@ export const getRiderOrdersController = async (request, response) => {
                 const broadcastFilter = {
                     "deliveryAssignment.status": "broadcast",
                     "products.sellerId": { $in: sellerIds },
+                    $or: [
+                        { "deliveryAssignment.riderId": { $exists: false } },
+                        { "deliveryAssignment.riderId": null }
+                    ]
                 };
-                if (status) {
-                    if (status === "assigned") {
-                        filters.push(broadcastFilter);
-                    } else if (status === "broadcast") {
-                        filters.push(broadcastFilter);
-                    }
-                } else {
-                    filters.push(broadcastFilter);
-                }
+                filters.push(broadcastFilter);
             }
         }
 
         const query = filters.length === 1 ? filters[0] : { $or: filters };
+        
+        // Get total count for pagination
+        const total = await OrderModel.countDocuments(query);
+        
+        // Get paginated orders
         const orders = await OrderModel.find(query)
             .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit)
             .populate("delivery_address userId products.sellerId")
             .lean();
-        return response.json({ success: true, error: false, data: orders, orders });
+        
+        const totalPages = Math.ceil(total / limit);
+        
+        return response.json({ 
+            success: true, 
+            error: false, 
+            data: orders, 
+            orders,
+            total,
+            page,
+            limit,
+            totalPages
+        });
     } catch (error) {
         return response.status(500).json({ success: false, error: true, message: error.message || error });
     }
@@ -1452,20 +1431,37 @@ export const confirmRiderOrderController = async (request, response) => {
             sellerIds = marketSellers.map((seller) => seller._id);
         }
 
-        const existingActiveOrder = await findActiveDeliveryOrderForRider(request.userId, request.params.id);
-        if (existingActiveOrder) {
-            return response.status(400).json({
-                success: false,
-                error: true,
-                message: "You already have an active delivery. Complete the current order first.",
-            });
-        }
-
         const searchConditions = [
             { "deliveryAssignment.riderId": request.userId, "deliveryAssignment.status": { $in: ["assigned", "broadcast"] } },
         ];
         if (sellerIds.length) {
             searchConditions.push({ "deliveryAssignment.status": "broadcast", "products.sellerId": { $in: sellerIds } });
+        }
+
+        // First check if order exists and its current status
+        const existingOrder = await OrderModel.findOne({ _id: request.params.id });
+        
+        if (!existingOrder) {
+            return response.status(404).json({ success: false, error: true, message: "Order not found" });
+        }
+
+        // Check if order is already confirmed by another rider
+        if (existingOrder.deliveryAssignment?.status === "confirmed" && 
+            String(existingOrder.deliveryAssignment?.riderId) !== String(request.userId)) {
+            return response.status(400).json({ 
+                success: false, 
+                error: true, 
+                message: "This order has already been confirmed by another rider" 
+            });
+        }
+
+        // Check if order is already delivered
+        if (existingOrder.deliveryAssignment?.status === "delivered") {
+            return response.status(400).json({ 
+                success: false, 
+                error: true, 
+                message: "This order has already been delivered" 
+            });
         }
 
         const order = await OrderModel.findOneAndUpdate(
@@ -1576,6 +1572,50 @@ export const deliverRiderOrderController = async (request, response) => {
             data: order,
             wallet: riderData?.wallet,
             riderProfile: riderData?.riderProfile
+        });
+    } catch (error) {
+        return response.status(500).json({ success: false, error: true, message: error.message || error });
+    }
+};
+
+export const cancelRiderOrderController = async (request, response) => {
+    try {
+        const order = await OrderModel.findOne({ 
+            _id: request.params.id, 
+            "deliveryAssignment.riderId": request.userId 
+        });
+        
+        if (!order) {
+            return response.status(404).json({ success: false, error: true, message: "Assigned order not found" });
+        }
+
+        // Only allow cancellation if order is not yet delivered
+        if (order.deliveryAssignment.status === "delivered") {
+            return response.status(400).json({ success: false, error: true, message: "Cannot cancel a delivered order" });
+        }
+
+        // Update order status and reset delivery assignment
+        order.order_status = "cancelled";
+        order.deliveryAssignment = {
+            riderId: null,
+            assignedBy: null,
+            assignedAt: null,
+            confirmedAt: null,
+            deliveredAt: null,
+            deliveryOtp: "",
+            deliveryOtpExpires: null,
+            earningAmount: 20,
+            earningCredited: false,
+            status: "unassigned"
+        };
+
+        await order.save();
+
+        return response.json({ 
+            success: true, 
+            error: false, 
+            message: "Order cancelled successfully and removed from your assignments",
+            data: order
         });
     } catch (error) {
         return response.status(500).json({ success: false, error: true, message: error.message || error });
