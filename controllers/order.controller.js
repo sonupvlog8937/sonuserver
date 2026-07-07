@@ -1136,16 +1136,26 @@ export async function getSellerDashboardStats(request, response) {
         });
     }
 }
-const RIDER_DELIVERY_FEE = 20;
+const RIDER_DELIVERY_FEE = 10;
 
 const getSellerMarketIds = async (sellerId, sellerEmail = "") => {
+    const marketIds = new Set();
+
+    const seller = await UserModel.findById(sellerId).select("storeProfile.marketId").lean();
+    if (seller?.storeProfile?.marketId) marketIds.add(String(seller.storeProfile.marketId));
+
     const ownerQuery = sellerEmail ? { $or: [{ userId: sellerId }, { email: sellerEmail }] } : { userId: sellerId };
     const ownerIds = (await ShopOwner.find(ownerQuery).select("_id").lean()).map((o) => o._id);
     const [shops, restaurants] = await Promise.all([
         GroceryShop.find({ ownerId: { $in: ownerIds } }).select("marketId").lean(),
         Restaurant.find({ ownerId: { $in: ownerIds } }).select("marketId").lean(),
     ]);
-    return [...shops, ...restaurants].map((o) => o.marketId).filter(Boolean).map(String);
+
+    [...shops, ...restaurants].forEach((item) => {
+        if (item?.marketId) marketIds.add(String(item.marketId));
+    });
+
+    return [...marketIds];
 };
 
 export const listDeliveryRidersController = async (request, response) => {
