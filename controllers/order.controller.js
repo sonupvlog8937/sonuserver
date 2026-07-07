@@ -1137,6 +1137,22 @@ export async function getSellerDashboardStats(request, response) {
     }
 }
 const RIDER_DELIVERY_FEE = 10;
+const ACTIVE_DELIVERY_STATUSES = ["assigned", "confirmed", "otp_sent"];
+
+export const findActiveDeliveryOrderForRider = async (riderId, excludeOrderId = null) => {
+    if (!riderId) return null;
+
+    const query = {
+        "deliveryAssignment.riderId": riderId,
+        "deliveryAssignment.status": { $in: ACTIVE_DELIVERY_STATUSES },
+    };
+
+    if (excludeOrderId) {
+        query._id = { $ne: excludeOrderId };
+    }
+
+    return OrderModel.findOne(query).select("_id deliveryAssignment.status").lean();
+};
 
 const getSellerMarketIds = async (sellerId, sellerEmail = "") => {
     const marketIds = new Set();
@@ -1247,6 +1263,15 @@ export const assignOrderToRiderController = async (request, response) => {
             }
         }
 
+        const existingActiveOrder = await findActiveDeliveryOrderForRider(rider._id, targetOrder._id);
+        if (existingActiveOrder) {
+            return response.status(400).json({
+                success: false,
+                error: true,
+                message: "This rider already has an active delivery. Complete the current order first.",
+            });
+        }
+
         targetOrder.deliveryAssignment = {
             ...(targetOrder.deliveryAssignment || {}),
             riderId: rider._id,
@@ -1270,12 +1295,23 @@ export const getRiderOrdersController = async (request, response) => {
         const rider = await UserModel.findById(request.userId).select("riderProfile.marketId").lean();
         const riderMarketId = rider?.riderProfile?.marketId;
 
+        const activeOrderStatuses = ["assigned", "confirmed", "otp_sent"];
+        const activeOrderMatch = {
+            "deliveryAssignment.riderId": request.userId,
+            "deliveryAssignment.status": { $in: activeOrderStatuses },
+        };
+        const hasActiveOrder = await OrderModel.exists(activeOrderMatch);
+
         const assignedFilter = { "deliveryAssignment.riderId": request.userId };
-        if (status) assignedFilter["deliveryAssignment.status"] = status;
+        if (status) {
+            assignedFilter["deliveryAssignment.status"] = status === "assigned"
+                ? { $in: activeOrderStatuses }
+                : status;
+        }
 
         const filters = [assignedFilter];
 
-        if (riderMarketId) {
+        if (!hasActiveOrder && riderMarketId) {
             const sellerRoles = [
                 "GROCERY_SELLER",
                 "FASHION_SELLER",
@@ -1302,8 +1338,15 @@ export const getRiderOrdersController = async (request, response) => {
                     "deliveryAssignment.status": "broadcast",
                     "products.sellerId": { $in: sellerIds },
                 };
-                if (status) broadcastFilter["deliveryAssignment.status"] = status;
-                filters.push(broadcastFilter);
+                if (status) {
+                    if (status === "assigned") {
+                        filters.push(broadcastFilter);
+                    } else if (status === "broadcast") {
+                        filters.push(broadcastFilter);
+                    }
+                } else {
+                    filters.push(broadcastFilter);
+                }
             }
         }
 
@@ -1407,6 +1450,15 @@ export const confirmRiderOrderController = async (request, response) => {
                 "storeProfile.marketId": riderMarketId,
             }).select("_id").lean();
             sellerIds = marketSellers.map((seller) => seller._id);
+        }
+
+        const existingActiveOrder = await findActiveDeliveryOrderForRider(request.userId, request.params.id);
+        if (existingActiveOrder) {
+            return response.status(400).json({
+                success: false,
+                error: true,
+                message: "You already have an active delivery. Complete the current order first.",
+            });
         }
 
         const searchConditions = [
