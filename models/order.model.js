@@ -99,6 +99,28 @@ const orderSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    goMarketData: {
+      type: {
+        type: String,
+        default: "standard",
+      },
+      distanceKm: {
+        type: Number,
+        default: 0,
+      },
+      distanceDisplay: {
+        type: String,
+        default: "",
+      },
+      userLocation: {
+        type: Object,
+        default: null,
+      },
+      farthestSource: {
+        type: Object,
+        default: null,
+      },
+    },
     discount_amount: {
       type: Number,
       default: 0,

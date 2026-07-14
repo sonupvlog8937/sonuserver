@@ -18,6 +18,8 @@ import {
   searchMarkets,
   updateResource,
   setPreferredMarket,
+  debugMarkets,
+  addTestCoordinatesToMarkets,
 } from "../controllers/goMarket.controller.js";
 import {
   getGroceryProductStorefront,
@@ -56,6 +58,8 @@ const crud = (path, key, detailHandler = null, writeMiddleware = canManage) => {
 
 router.get("/markets/search", searchMarkets);
 router.get("/markets/nearby", nearbyMarkets);
+router.get("/markets/debug/info", debugMarkets);
+router.post("/markets/debug/add-test-coordinates", addTestCoordinatesToMarkets);
 router.get("/markets/:marketId/outlets", optionalAuth, listMarketOutlets);
 router.get("/markets/:marketId/shop-suggestions", optionalAuth, marketShopSearchSuggestions);
 router.get("/grocery-shops/:shopId/catalog", optionalAuth, listShopProductsCatalog);

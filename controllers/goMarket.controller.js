@@ -243,8 +243,11 @@ export const nearbyMarkets = async (req, res) => {
   try {
     const { latitude, longitude, limit } = req.query;
     
+    console.log("📍 nearbyMarkets API called with params:", { latitude, longitude, limit });
+    
     // Validate coordinates
     if (!latitude || !longitude) {
+      console.warn("⚠️ Missing latitude or longitude");
       return sendError(res, "Latitude and longitude are required", 400);
     }
 
@@ -252,9 +255,11 @@ export const nearbyMarkets = async (req, res) => {
     const lng = Number(longitude);
 
     if (isNaN(lat) || isNaN(lng)) {
+      console.warn("⚠️ Invalid coordinates (NaN):", { latitude, longitude });
       return sendError(res, "Invalid coordinates provided", 400);
     }
 
+    console.log(`📍 Valid coordinates received: (${lat}, ${lng})`);
     const data = await findNearbyMarkets({ latitude: lat, longitude: lng, limit: Number(limit || 10) });
     
     console.log(`✅ Nearby markets API - Found ${data.length} markets for (${lat}, ${lng})`);
@@ -407,7 +412,9 @@ export const unfollowRestaurant = async (req, res) => {
 export const setPreferredMarket = async (req, res) => {
   try {
     const userId = req.userId;
-    const { marketId } = req.body;
+    const { marketId, location, address } = req.body;
+    
+    console.log("📍 setPreferredMarket called with:", { marketId, location, address });
     
     if (!userId) return sendError(res, "Login required", 401);
     if (!marketId || !isObjectId(marketId)) return sendError(res, "Valid marketId is required", 400);
@@ -419,16 +426,104 @@ export const setPreferredMarket = async (req, res) => {
     // Import UserModel dynamically to avoid circular dependency
     const UserModel = (await import("../models/user.model.js")).default;
     
+    const update = { preferredMarketId: marketId };
+    
+    // Validate and save location in GeoJSON format
+    if (location && Number.isFinite(Number(location?.lat)) && Number.isFinite(Number(location?.lng))) {
+      const lat = Number(location.lat);
+      const lng = Number(location.lng);
+      
+      console.log("✅ Valid location coordinates:", { lat, lng });
+      console.log("📝 Saving in GeoJSON format: [lng, lat] =", [lng, lat]);
+      
+      update.goMarketLocation = {
+        type: "Point",
+        coordinates: [lng, lat], // GeoJSON format: [longitude, latitude]
+        address: String(address || `Location: ${lat.toFixed(6)}, ${lng.toFixed(6)}`),
+        updatedAt: new Date(),
+      };
+    } else {
+      console.warn("⚠️ Invalid location provided:", location);
+    }
+
     // Update user's preferred market
     const user = await UserModel.findByIdAndUpdate(
       userId,
-      { preferredMarketId: marketId },
+      update,
       { new: true }
-    ).select("preferredMarketId");
+    ).select("preferredMarketId goMarketLocation");
     
     if (!user) return sendError(res, "User not found", 404);
     
-    ok(res, { message: "Preferred market saved", data: { preferredMarketId: marketId } });
+    console.log("💾 Saved goMarketLocation:", user?.goMarketLocation);
+    
+    ok(res, { message: "Preferred market saved", data: { preferredMarketId: marketId, goMarketLocation: user?.goMarketLocation || null } });
+  } catch (error) {
+    console.error("❌ setPreferredMarket error:", error);
+    sendError(res, error);
+  }
+};
+
+// DEBUG ENDPOINT - Check what markets exist
+export const debugMarkets = async (req, res) => {
+  try {
+    const markets = await Market.find({ status: "active" }).lean();
+    const marketsWithCoords = markets.filter(m => m.latitude != null && m.longitude != null);
+    const marketsWithoutCoords = markets.filter(m => !m.latitude || !m.longitude);
+    
+    console.log(`\n📍 MARKET DEBUG INFO:`);
+    console.log(`Total active markets: ${markets.length}`);
+    console.log(`Markets with coordinates: ${marketsWithCoords.length}`);
+    console.log(`Markets without coordinates: ${marketsWithoutCoords.length}\n`);
+    
+    ok(res, { 
+      summary: {
+        total: markets.length,
+        withCoords: marketsWithCoords.length,
+        withoutCoords: marketsWithoutCoords.length
+      },
+      withCoords: marketsWithCoords.map(m => ({ _id: m._id, name: m.name, lat: m.latitude, lng: m.longitude })),
+      withoutCoords: marketsWithoutCoords.map(m => ({ _id: m._id, name: m.name }))
+    });
+  } catch (error) {
+    sendError(res, error);
+  }
+};
+
+// ADD TEST COORDINATES TO MARKETS
+export const addTestCoordinatesToMarkets = async (req, res) => {
+  try {
+    const testCoordinates = [
+      { lat: 28.6139, lng: 77.2090 }, // Delhi
+      { lat: 19.0760, lng: 72.8777 }, // Mumbai
+      { lat: 13.0827, lng: 80.2707 }, // Chennai
+      { lat: 23.1815, lng: 79.9864 }, // Indore
+      { lat: 31.6340, lng: 74.8711 }, // Lahore
+    ];
+
+    const markets = await Market.find({ status: "active" }).lean();
+    const updates = [];
+
+    for (let i = 0; i < markets.length; i++) {
+      const coords = testCoordinates[i % testCoordinates.length];
+      // Add some random offset to avoid all markets being at the same location
+      const lat = coords.lat + (Math.random() - 0.5) * 0.1;
+      const lng = coords.lng + (Math.random() - 0.5) * 0.1;
+      
+      const updated = await Market.findByIdAndUpdate(
+        markets[i]._id,
+        { latitude: lat, longitude: lng },
+        { new: true }
+      ).lean();
+      
+      updates.push(updated);
+      console.log(`✅ Updated ${updated.name} with coordinates: (${lat.toFixed(4)}, ${lng.toFixed(4)})`);
+    }
+
+    ok(res, { 
+      message: `Updated ${updates.length} markets with test coordinates`,
+      markets: updates.map(m => ({ _id: m._id, name: m.name, lat: m.latitude, lng: m.longitude }))
+    });
   } catch (error) {
     sendError(res, error);
   }

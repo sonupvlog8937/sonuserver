@@ -590,11 +590,19 @@ export const listShopProductsCatalog = async (req, res) => {
     const result = await paginate(GroceryProduct, filter, { ...req.query, sort }, "categoryId subCategoryId");
     const filterMeta = await buildShopFilterMeta(shopId);
 
+    // Add shop location and ID to each product
+    const productsWithShopData = (await applyProductReviewStats(result.data || [], baseUrl)).map((p) => ({
+      ...p,
+      shopId,
+      shopLatitude: shopDoc.latitude,
+      shopLongitude: shopDoc.longitude,
+    }));
+
     ok(res, {
       shop,
       tab,
       filterMeta,
-      data: await applyProductReviewStats(result.data || [], baseUrl),
+      data: productsWithShopData,
       pagination: result.pagination,
     });
   } catch (error) {
@@ -668,11 +676,19 @@ export const searchShopProducts = async (req, res) => {
     const filterMeta = await buildShopFilterMeta(shopId);
     const queryLabel = String(req.query.q || req.query.search || "").trim();
 
+    // Add shop location and ID to each product
+    const productsWithShopData = (await applyProductReviewStats(result.data || [], baseUrl)).map((p) => ({
+      ...p,
+      shopId,
+      shopLatitude: shopDoc.latitude,
+      shopLongitude: shopDoc.longitude,
+    }));
+
     ok(res, {
       shop,
       query: queryLabel,
       filterMeta,
-      data: await applyProductReviewStats(result.data || [], baseUrl),
+      data: productsWithShopData,
       pagination: result.pagination,
     });
   } catch (error) {
@@ -767,6 +783,9 @@ export const listRestaurantItemsCatalog = async (req, res) => {
         mrp: item.price,
         discount,
         productOptions: item.productOptions || [],
+        restaurantId,
+        restaurantLatitude: restaurantDoc.latitude,
+        restaurantLongitude: restaurantDoc.longitude,
       };
     });
 
