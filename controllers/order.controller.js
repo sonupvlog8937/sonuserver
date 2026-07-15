@@ -373,6 +373,14 @@ export const createOrderController = async (request, response) => {
             },
             date: request.body.date
         });
+        
+        // Debug log for user location
+        console.log("📍 Order created with goMarketData:", {
+            orderType: order.goMarketData.orderType,
+            userLocation: order.goMarketData.userLocation,
+            distanceKm: order.goMarketData.distanceKm,
+            hasCoordinates: order.goMarketData.userLocation?.coordinates ? 'YES' : 'NO'
+        });
 
         if (!order) {
             response.status(500).json({
