@@ -1297,7 +1297,17 @@ const getSellerMarketIds = async (sellerId, sellerEmail = "") => {
         GroceryShop.find({ ownerId: { $in: ownerIds } }).select("marketId").lean(),
         Restaurant.find({ ownerId: { $in: ownerIds } }).select("marketId").lean(),
     ]);
-    return [...shops, ...restaurants].map((o) => o.marketId).filter(Boolean).map(String);
+    const marketIds = [...shops, ...restaurants].map((o) => o.marketId).filter(Boolean).map(String);
+
+    // Fallback: if ShopOwner chain returned nothing, check User.storeProfile.marketId directly
+    if (!marketIds.length) {
+        const user = await UserModel.findById(sellerId).select("storeProfile.marketId").lean();
+        if (user?.storeProfile?.marketId) {
+            marketIds.push(String(user.storeProfile.marketId));
+        }
+    }
+
+    return [...new Set(marketIds)];
 };
 
 export const listDeliveryRidersController = async (request, response) => {
@@ -1332,16 +1342,36 @@ export const broadcastOrderToMarketController = async (request, response) => {
             return response.status(400).json({ success: false, error: true, message: "Order is already assigned or in delivery" });
         }
 
-        const marketIds = request.currentUser?.role === "ADMIN"
-            ? []
-            : await getSellerMarketIds(request.userId, request.currentUser?.email);
+        let marketIds;
+        if (request.currentUser?.role === "ADMIN") {
+            // Admin: derive market from the order's product sellers
+            const sellerIds = targetOrder.products.map(p => p.sellerId).filter(Boolean);
+            const uniqueSellerIds = [...new Set(sellerIds.map(String))];
+            marketIds = [];
+            if (uniqueSellerIds.length) {
+                const sellers = await UserModel.find({ _id: { $in: uniqueSellerIds } }).select("storeProfile.marketId").lean();
+                marketIds = [...new Set(sellers.map(s => s?.storeProfile?.marketId).filter(Boolean).map(String))];
+                if (!marketIds.length) {
+                    // Fallback: try ShopOwner chain
+                    const ownerIds = (await ShopOwner.find({ userId: { $in: uniqueSellerIds } }).select("_id").lean()).map(o => o._id);
+                    if (ownerIds.length) {
+                        const [shops, rests] = await Promise.all([
+                            GroceryShop.find({ ownerId: { $in: ownerIds } }).select("marketId").lean(),
+                            Restaurant.find({ ownerId: { $in: ownerIds } }).select("marketId").lean(),
+                        ]);
+                        marketIds = [...new Set([...shops, ...rests].map(o => o.marketId).filter(Boolean).map(String))];
+                    }
+                }
+            }
+        } else {
+            marketIds = await getSellerMarketIds(request.userId, request.currentUser?.email);
+        }
 
         const riderQuery = { role: "DELIVERY_RIDER", status: "Active" };
-        if (request.currentUser?.role !== "ADMIN") {
-            if (!marketIds.length) {
-                return response.status(400).json({ success: false, error: true, message: "No active market found for this seller" });
-            }
+        if (marketIds.length) {
             riderQuery["riderProfile.marketId"] = { $in: marketIds };
+        } else if (request.currentUser?.role !== "ADMIN") {
+            return response.status(400).json({ success: false, error: true, message: "No active market found for this seller" });
         }
 
         const activeRiders = await UserModel.find(riderQuery).lean();
@@ -1441,7 +1471,7 @@ export const getRiderOrdersController = async (request, response) => {
                 "MEDICAL_SELLER",
                 "BEAUTY_SELLER",
                 "HOME_KITCHEN_SELLER",
-                "GIFTS_TOYS_STATIONERY_SELLER",
+                "GIFTS_TOYS_SELLER",
                 "BOOKS_STATIONERY_SELLER",
                 "JEWELLERY_SELLER",
                 "HARDWARE_SELLER",
