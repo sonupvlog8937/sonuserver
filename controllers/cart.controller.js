@@ -48,12 +48,6 @@ export const addToCartItemController = async (request, response) => {
       colorCode,
       selectedOptions,
       source,
-      shopId: requestShopId,
-      shopLatitude: requestShopLatitude,
-      shopLongitude: requestShopLongitude,
-      restaurantId: requestRestaurantId,
-      restaurantLatitude: requestRestaurantLatitude,
-      restaurantLongitude: requestRestaurantLongitude,
     } = request.body;
     if (!productId) {
       return response.status(402).json({
@@ -144,12 +138,12 @@ export const addToCartItemController = async (request, response) => {
       colorCode: colorCode,
       selectedOptions: selectedOptions || {},
       source: source || "",
-      shopId: shopId || requestShopId || "",
-      shopLatitude: shopLatitude ?? requestShopLatitude,
-      shopLongitude: shopLongitude ?? requestShopLongitude,
-      restaurantId: restaurantId || requestRestaurantId || "",
-      restaurantLatitude: restaurantLatitude ?? requestRestaurantLatitude,
-      restaurantLongitude: restaurantLongitude ?? requestRestaurantLongitude,
+      shopId: shopId || "",
+      shopLatitude: shopLatitude,
+      shopLongitude: shopLongitude,
+      restaurantId: restaurantId || "",
+      restaurantLatitude: restaurantLatitude,
+      restaurantLongitude: restaurantLongitude,
     });
 
     const save = await cartItem.save();
