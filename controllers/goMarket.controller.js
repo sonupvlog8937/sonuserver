@@ -103,6 +103,12 @@ const normalizeGoMarketCategoryPayload = async (resourceKey, body) => {
   const payload = { ...body };
 
   if (resourceKey === "subcategories") {
+    if (payload.parentModel === "GoMarketSubCategory" || payload.subCategoryId) {
+      payload.parentId = payload.subCategoryId || payload.parentId;
+      payload.parentModel = "GoMarketSubCategory";
+      return payload;
+    }
+
     const categoryId = payload.categoryId || payload.parentId;
     if (categoryId) {
       payload.categoryId = categoryId;
@@ -150,6 +156,7 @@ const normalizeGoMarketCategoryPayload = async (resourceKey, body) => {
 
   return payload;
 };
+
 
 const assertSellerCanWrite = async (resourceKey, body, req) => {
   if (!isSellerRole(req.currentUser?.role)) return body;
