@@ -151,7 +151,6 @@ const normalizeGoMarketCategoryPayload = async (resourceKey, body) => {
   return payload;
 };
 
-
 const assertSellerCanWrite = async (resourceKey, body, req) => {
   if (!isSellerRole(req.currentUser?.role)) return body;
   const ownerIds = await getSellerOwnerIds(req);
