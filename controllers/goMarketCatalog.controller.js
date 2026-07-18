@@ -801,7 +801,7 @@ export const listRestaurantItemsCatalog = async (req, res) => {
     const filter = await buildRestaurantCatalogFilter(req, restaurantId);
     const tab = String(req.query.tab || "featured").toLowerCase();
     const sort = req.query.sort ? itemSort(req.query) : itemSort({ tab });
-    const result = await paginate(RestaurantItem, filter, { ...req.query, sort }, "categoryId subCategoryId subSubCategoryId menuId");
+    const result = await paginate(RestaurantItem, filter, { ...req.query, sort }, "categoryId subCategoryId subSubCategoryId menuId", "productType");
     const filterMeta = await buildRestaurantFilterMeta(restaurantId);
     const baseUrl = apiBaseFromRequest(req);
     const normalizedRestaurant = {
@@ -1070,6 +1070,7 @@ export const getRestaurantItemStorefront = async (req, res) => {
         isGoMarket: true,
         goMarketKind: "restaurant",
         productOptions,
+        productType: item.productType,
       },
       restaurant: restaurant
         ? {
