@@ -737,7 +737,7 @@ const buildRestaurantFilterMeta = async (restaurantId) => {
       .select("price categoryId subCategoryId subSubCategoryId menuId")
       .populate("categoryId subCategoryId subSubCategoryId")
       .lean(),
-    RestaurantMenu.find({ restaurantId }).select("_id menuName").lean(),
+    RestaurantMenu.find({ restaurantId }).select("_id menuName").limit(100).lean(),
   ]);
   
   const catMap = new Map();
