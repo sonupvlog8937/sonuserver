@@ -708,6 +708,19 @@ export const searchShopProducts = async (req, res) => {
   }
 };
 
+const getRestaurantItemFoodType = (item = {}) => {
+  const direct = String(item.foodType || item.food_type || item.foodtype || "").trim();
+  if (direct) return direct;
+
+  const specs = Array.isArray(item.specifications) ? item.specifications : [];
+  const spec = specs.find((row) => {
+    const key = String(row?.key || row?.name || row?.label || "").trim().toLowerCase();
+    return key === "food type" || key === "foodtype" || key === "food_type";
+  });
+
+  return String(spec?.value || spec?.text || "").trim();
+};
+
 const buildRestaurantCatalogFilter = async (req, restaurantId) => {
   const filter = buildQuery({ ...req.query, restaurantId }, ["itemName", "description", "title", "keywords", "tags", "searchKeywords", "seoDescription", "attributes"]);
   const tab = String(req.query.tab || "featured").toLowerCase();
@@ -736,7 +749,7 @@ const buildRestaurantCatalogFilter = async (req, restaurantId) => {
 const buildRestaurantFilterMeta = async (restaurantId) => {
   const [rows, menus] = await Promise.all([
     RestaurantItem.find({ restaurantId })
-      .select("price categoryId subCategoryId subSubCategoryId menuId foodType")
+      .select("price categoryId subCategoryId subSubCategoryId menuId foodType specifications")
       .populate("categoryId subCategoryId subSubCategoryId")
       .lean(),
     RestaurantMenu.find({ restaurantId }).select("_id menuName").limit(100).lean(),
@@ -759,7 +772,7 @@ const buildRestaurantFilterMeta = async (restaurantId) => {
     if (row.categoryId?._id) catMap.set(String(row.categoryId._id), { _id: row.categoryId._id, name: row.categoryId.name });
     if (row.subCategoryId?._id) subMap.set(String(row.subCategoryId._id), { _id: row.subCategoryId._id, name: row.subCategoryId.name, parentId: row.subCategoryId.parentId });
     if (row.subSubCategoryId?._id) subSubMap.set(String(row.subSubCategoryId._id), { _id: row.subSubCategoryId._id, name: row.subSubCategoryId.name, categoryId: row.subSubCategoryId.categoryId, subCategoryId: row.subSubCategoryId.subCategoryId });
-    const foodType = String(row.foodType || "").trim();
+    const foodType = getRestaurantItemFoodType(row);
     if (foodType) foodTypeMap.set(foodType.toLowerCase(), { _id: foodType, name: foodType });
   });
   
@@ -821,7 +834,7 @@ export const listRestaurantItemsCatalog = async (req, res) => {
         : 0;
       return {
         ...item,
-        foodType: item.foodType || "",
+        foodType: getRestaurantItemFoodType(item),
         image: resolveMediaUrl(item.image, baseUrl),
         price: selling,
         oldPrice: item.price,
@@ -1076,7 +1089,7 @@ export const getRestaurantItemStorefront = async (req, res) => {
         isGoMarket: true,
         goMarketKind: "restaurant",
         productOptions,
-        foodType: item.foodType || "",
+        foodType: getRestaurantItemFoodType(item),
       },
       restaurant: restaurant
         ? {
@@ -1107,7 +1120,7 @@ export const getRestaurantItemStorefront = async (req, res) => {
             description: p.description,
             rating: stats?.averageRating || 0,
             goMarketKind: "restaurant",
-            foodType: p.foodType,
+            foodType: getRestaurantItemFoodType(p),
           };
         });
       })(),
