@@ -716,6 +716,7 @@ const buildRestaurantCatalogFilter = async (req, restaurantId) => {
   if (req.query.categoryId && isObjectId(req.query.categoryId)) filter.categoryId = req.query.categoryId;
   if (req.query.subCategoryId && isObjectId(req.query.subCategoryId)) filter.subCategoryId = req.query.subCategoryId;
   if (req.query.subSubCategoryId && isObjectId(req.query.subSubCategoryId)) filter.subSubCategoryId = req.query.subSubCategoryId;
+  if (req.query.productType) filter.productType = req.query.productType;
   if (req.query.minPrice) filter.price = { ...(filter.price || {}), $gte: Number(req.query.minPrice) };
   if (req.query.maxPrice) filter.price = { ...(filter.price || {}), $lte: Number(req.query.maxPrice) };
   const minRating = Number(req.query.minRating || 0);
