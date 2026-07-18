@@ -821,6 +821,7 @@ export const listRestaurantItemsCatalog = async (req, res) => {
         : 0;
       return {
         ...item,
+        foodType: item.foodType || item.productType,
         image: resolveMediaUrl(item.image, baseUrl),
         price: selling,
         oldPrice: item.price,
@@ -1075,7 +1076,7 @@ export const getRestaurantItemStorefront = async (req, res) => {
         isGoMarket: true,
         goMarketKind: "restaurant",
         productOptions,
-        foodType: item.foodType,
+        foodType: item.foodType || item.productType,
       },
       restaurant: restaurant
         ? {
