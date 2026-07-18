@@ -6,6 +6,7 @@ import ProductWEIGHTModel from "../models/productWEIGHT.js";
 import ProductSIZEModel from "../models/productSIZE.js";
 import GroceryProduct from "../models/groceryProduct.model.js";
 import RestaurantItem from "../models/restaurantItem.model.js";
+import RestaurantMenu from "../models/restaurantMenu.model.js";
 import {
   assertSellerOwnsGroceryProduct,
   assertSellerOwnsRestaurantItem,
@@ -1137,6 +1138,7 @@ export async function getSellerProducts(request, response) {
       }
       const total = await RestaurantItem.countDocuments({ restaurantId: restaurant._id });
       const totalOnMenu = await RestaurantItem.countDocuments({ restaurantId: restaurant._id, isAvailable: { $ne: false } });
+      const totalMenuCount = await RestaurantMenu.countDocuments({ restaurantId: restaurant._id });
       const items = await RestaurantItem.find({ restaurantId: restaurant._id })
         .sort({ createdAt: -1 })
         .populate("categoryId subCategoryId")
@@ -1150,6 +1152,7 @@ export async function getSellerProducts(request, response) {
         products: mapped,
         total,
         totalOnMenu,
+        totalMenuCount,
         totalPages: Math.ceil(total / limit),
         page,
       });
