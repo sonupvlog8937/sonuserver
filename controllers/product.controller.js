@@ -1109,6 +1109,8 @@ export async function getSellerProducts(request, response) {
         return response.status(200).json({ error: false, success: true, products: [], total: 0, totalPages: 0, page });
       }
       const total = await GroceryProduct.countDocuments({ shopId: shop._id });
+      const outOfStock = await GroceryProduct.countDocuments({ shopId: shop._id, stock: 0 });
+      const lowStockCount = await GroceryProduct.countDocuments({ shopId: shop._id, stock: { $gt: 0, $lt: 10 } });
       const products = await GroceryProduct.find({ shopId: shop._id })
         .sort({ createdAt: -1 })
         .populate("categoryId subCategoryId")
@@ -1121,6 +1123,8 @@ export async function getSellerProducts(request, response) {
         success: true,
         products: mapped,
         total,
+        outOfStock,
+        lowStockCount,
         totalPages: Math.ceil(total / limit),
         page,
       });
@@ -1132,6 +1136,7 @@ export async function getSellerProducts(request, response) {
         return response.status(200).json({ error: false, success: true, products: [], total: 0, totalPages: 0, page });
       }
       const total = await RestaurantItem.countDocuments({ restaurantId: restaurant._id });
+      const totalOnMenu = await RestaurantItem.countDocuments({ restaurantId: restaurant._id, isAvailable: { $ne: false } });
       const items = await RestaurantItem.find({ restaurantId: restaurant._id })
         .sort({ createdAt: -1 })
         .populate("categoryId subCategoryId")
@@ -1144,12 +1149,15 @@ export async function getSellerProducts(request, response) {
         success: true,
         products: mapped,
         total,
+        totalOnMenu,
         totalPages: Math.ceil(total / limit),
         page,
       });
     }
 
     const total = await ProductModel.countDocuments({ seller: request.userId });
+    const featuredCount = await ProductModel.countDocuments({ seller: request.userId, isFeatured: true });
+    const outOfStock = await ProductModel.countDocuments({ seller: request.userId, countInStock: 0 });
     const products = await ProductModel.find({ seller: request.userId })
       .sort({ createdAt: -1 })
       .populate("seller", "name email role status storeProfile")
@@ -1161,6 +1169,8 @@ export async function getSellerProducts(request, response) {
       success: true,
       products,
       total,
+      featuredCount,
+      outOfStock,
       totalPages: Math.ceil(total / limit),
       page,
     });
