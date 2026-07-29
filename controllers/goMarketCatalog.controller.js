@@ -226,6 +226,7 @@ const buildShopFilterMeta = async (shopId) => {
 const sendError = (res, error, status = 500) =>
   res.status(status).json({ error: true, success: false, message: error.message || error });
 
+const sponsoredFirst = (a, b) => Number(Boolean(b.isSponsored)) - Number(Boolean(a.isSponsored));
 const followedFirst = (a, b) => Number(Boolean(b.isFollowing)) - Number(Boolean(a.isFollowing));
 const byRatingDesc = (a, b) => (b.rating || 0) - (a.rating || 0);
 const byNameAsc = (a, b) => String(a.displayName || "").localeCompare(String(b.displayName || ""));
@@ -240,7 +241,7 @@ const resolveOutletSort = (sortKey) => {
     newest: (a, b) => new Date(b.createdAt) - new Date(a.createdAt) || byRatingDesc(a, b) || byNameAsc(a, b),
   };
   const selectedSort = map[sortKey] || map.rating;
-  return (a, b) => followedFirst(a, b) || selectedSort(a, b);
+  return (a, b) => sponsoredFirst(a, b) || followedFirst(a, b) || selectedSort(a, b);
 };
 
 const mapGroceryOutlet = (shop, userId = null, baseUrl = "", userLat = null, userLng = null, outletCoords = null) => {
@@ -278,6 +279,7 @@ const mapGroceryOutlet = (shop, userId = null, baseUrl = "", userLat = null, use
       ? followers.some((f) => String(f?._id || f) === String(userId))
       : false,
     isOpen: shop.isOpen !== false,
+    isSponsored: Boolean(shop.isSponsored),
     totalProducts: shop.totalProducts || 0,
     meta: `${shop.totalProducts || 0} products`,
     distance: distanceKm != null ? parseFloat(distanceKm.toFixed(2)) : null,
@@ -321,6 +323,7 @@ const mapRestaurantOutlet = (r, userId = null, baseUrl = "", userLat = null, use
       ? followers.some((f) => String(f?._id || f) === String(userId))
       : false,
     isOpen: r.isOpen !== false,
+    isSponsored: Boolean(r.isSponsored),
     totalProducts: r.totalItems || 0,
     meta: `${r.totalMenus || 0} menus · ${r.totalItems || 0} dishes`,
     distance: distanceKm != null ? parseFloat(distanceKm.toFixed(2)) : null,

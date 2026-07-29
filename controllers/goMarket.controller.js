@@ -165,7 +165,8 @@ const assertSellerCanWrite = async (resourceKey, body, req) => {
 
   if (["grocery-shops", "restaurants"].includes(resourceKey)) {
     if (!ownerIds.length) throw Object.assign(new Error("No Go Market owner found for this seller"), { statusCode: 403 });
-    return { ...body, ownerId: ownerIds[0] };
+    const { isSponsored, ...sellerBody } = body;
+    return { ...sellerBody, ownerId: ownerIds[0] };
   }
 
   if (resourceKey === "products") {

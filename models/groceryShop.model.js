@@ -22,6 +22,7 @@ const groceryShopSchema = new mongoose.Schema({
   isOpen: { type: Boolean, default: true },
   deliveryMinutes: { type: Number, default: 15, min: 5, max: 120 },
   minOrderValue: { type: Number, default: 99, min: 0 },
+  isSponsored: { type: Boolean, default: false, index: true },
 }, { timestamps: true });
 groceryShopSchema.index({ shopName: "text", address: "text", description: "text" });
 export default mongoose.model("GroceryShop", groceryShopSchema);

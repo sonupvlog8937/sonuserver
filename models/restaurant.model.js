@@ -18,6 +18,7 @@ const restaurantSchema = new mongoose.Schema({
   deliveryMinutes: { type: Number, default: 30, min: 5, max: 120 },
   minOrderValue: { type: Number, default: 149, min: 0 },
   avgPrepMinutes: { type: Number, default: 25, min: 5, max: 90 },
+  isSponsored: { type: Boolean, default: false, index: true },
 }, { timestamps: true });
 restaurantSchema.index({ restaurantName: "text", address: "text", description: "text" });
 export default mongoose.model("Restaurant", restaurantSchema);
