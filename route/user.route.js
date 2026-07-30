@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import {addReview, approveWalletRequest, authWithGoogle, changePasswordController, createSellerByAdminController, createWalletRequest, deleteMultiple, deleteUser, forgotPasswordController, getAllReviews, getAllUsers, getCommissionOverview, getReviews, getSellerStoreProfile, loginUserController, sendPhoneLoginOtpController, verifyPhoneLoginOtpController, logoutController, refreshToken, registerUserController, removeImageFromCloudinary, resetpassword, resendOtpController, updateUserAccessByAdminController, updateUserDetails, upsertSellerStoreProfile, userAvatarController, userDetails, verifyEmailController, verifyForgotPasswordOtp, registerSellerController, deleteMyAccount, sendLoginOtpController, verifyLoginOtpController, sendRegisterOtpController, verifyRegisterOtpController} from '../controllers/user.controller.js';
+import {addReview, approveWalletRequest, authWithGoogle, authWithPhoneController, changePasswordController, createSellerByAdminController, createWalletRequest, deleteMultiple, deleteUser, forgotPasswordController, getAllReviews, getAllUsers, getCommissionOverview, getReviews, getSellerStoreProfile, loginUserController, sendPhoneLoginOtpController, verifyPhoneLoginOtpController, completePhoneLoginController, sendRegisterPhoneOtpController, verifyRegisterPhoneOtpController, logoutController, refreshToken, registerUserController, removeImageFromCloudinary, resetpassword, resendOtpController, updateUserAccessByAdminController, updateUserDetails, upsertSellerStoreProfile, userAvatarController, userDetails, verifyEmailController, verifyForgotPasswordOtp, registerSellerController, deleteMyAccount, sendLoginOtpController, verifyLoginOtpController, sendRegisterOtpController, verifyRegisterOtpController} from '../controllers/user.controller.js';
 import {
   getQuickCommerceOutlet,
   updateQuickCommerceOutlet,
@@ -32,7 +32,11 @@ userRouter.post('/verify-register-otp', verifyRegisterOtpController)
 
 userRouter.post('/login-phone-otp/send',sendPhoneLoginOtpController)
 userRouter.post('/login-phone-otp/verify',verifyPhoneLoginOtpController)
+userRouter.post('/login-phone-otp/complete',completePhoneLoginController)
+userRouter.post('/register-phone-otp/send',sendRegisterPhoneOtpController)
+userRouter.post('/register-phone-otp/verify',verifyRegisterPhoneOtpController)
 userRouter.post('/authWithGoogle',authWithGoogle)
+userRouter.post('/auth-with-phone', authWithPhoneController)
 userRouter.get('/logout',auth,logoutController);
 userRouter.put('/user-avatar',auth,upload.single('avatar'),userAvatarController);
 userRouter.delete('/deteleImage',auth,removeImageFromCloudinary);

@@ -411,6 +411,97 @@ export async function resendOtpController(request, response) {
 }
 
 
+// ─── Phone Auth (Firebase) ────────────────────────────────────────────────────
+export async function authWithPhoneController(request, response) {
+    const { idToken, name } = request.body;
+
+    if (!idToken) {
+        return response.status(400).json({
+            message: "Firebase ID token is required",
+            error: true,
+            success: false,
+        });
+    }
+
+    try {
+        const { verifyFirebaseIdToken } = await import("../config/firebaseAdmin.js");
+        const decodedToken = await verifyFirebaseIdToken(idToken);
+        const phoneNumber = decodedToken.phone_number;
+        const firebaseUid = decodedToken.uid;
+
+        if (!phoneNumber) {
+            return response.status(400).json({
+                message: "Phone number not found in Firebase token",
+                error: true,
+                success: false,
+            });
+        }
+
+        const normalizedMobile = String(phoneNumber).replace(/\D/g, "").slice(-10);
+        if (normalizedMobile.length !== 10) {
+            return response.status(400).json({
+                message: "Invalid phone number in Firebase token",
+                error: true,
+                success: false,
+            });
+        }
+
+        const mobileNum = Number(normalizedMobile);
+        let user = await UserModel.findOne({
+            $or: [{ mobile: mobileNum }, { firebaseUid }],
+        });
+
+        if (user && user.status !== "Active") {
+            return response.status(400).json({
+                message: "Contact to admin",
+                error: true,
+                success: false,
+            });
+        }
+
+        if (!user) {
+            if (!name || String(name).trim().length < 2) {
+                return response.status(200).json({
+                    message: "Please provide your name to complete registration",
+                    error: false,
+                    success: true,
+                    needsName: true,
+                });
+            }
+
+            const generatedEmail = `phone_${normalizedMobile}@firebase.local`;
+            user = await UserModel.create({
+                name: String(name).trim(),
+                email: generatedEmail,
+                password: "null",
+                mobile: mobileNum,
+                firebaseUid,
+                verify_email: true,
+                status: "Active",
+            });
+        } else {
+            if (firebaseUid && !user.firebaseUid) {
+                user.firebaseUid = firebaseUid;
+            }
+            if (!user.mobile) {
+                user.mobile = mobileNum;
+            }
+            if (name && String(name).trim().length >= 2) {
+                user.name = String(name).trim();
+            }
+            await user.save();
+        }
+
+        return sendLoginResponse(response, user._id);
+    } catch (error) {
+        return response.status(401).json({
+            message: error.message || "Invalid or expired Firebase token",
+            error: true,
+            success: false,
+        });
+    }
+}
+
 // ─── Google Auth ──────────────────────────────────────────────────────────────
 export async function authWithGoogle(request, response) {
     const { name, email, password, avatar, mobile, role, firebaseUid } = request.body;
@@ -496,171 +587,278 @@ export async function loginUserController(request, response) {
         });
     }
 }
+// ─── Helper: Send OTP SMS via Fast2SMS ─────────────────────────────────────────
+async function sendFast2SMS(mobile, otp) {
+    const apiKey = process.env.FAST2SMS_API_KEY;
+    const isDev = process.env.NODE_ENV !== 'production';
+
+    if (!apiKey) {
+        if (isDev) {
+            console.log(`\n📱 [DEV MODE] OTP for ${mobile}: ${otp}\n`);
+            return true;
+        }
+        throw new Error('FAST2SMS_API_KEY is not configured in server .env');
+    }
+
+    // Use Fast2SMS quick transactional route
+    const payload = new URLSearchParams({
+        route: 'q',
+        message: `Your ${process.env.STORE_NAME || 'Zeedaddy'} OTP is ${otp}. Valid for 10 minutes. Do not share with anyone.`,
+        language: 'english',
+        flash: '0',
+        numbers: mobile,
+    });
+
+    console.log(`[Fast2SMS] Sending OTP ${otp} to: ${mobile}`);
+
+    try {
+        const smsResponse = await fetch('https://www.fast2sms.com/dev/bulkV2', {
+            method: 'POST',
+            headers: {
+                'authorization': apiKey,
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: payload.toString(),
+        });
+
+        const smsResult = await smsResponse.json();
+        console.log('[Fast2SMS] Response:', JSON.stringify(smsResult));
+
+        if (!smsResponse.ok || smsResult?.return === false || smsResult?.status_code === 999) {
+            const errMsg = Array.isArray(smsResult?.message)
+                ? smsResult.message.join(', ')
+                : (smsResult?.message || 'Unable to send SMS');
+
+            // In dev mode, fall back to console log
+            if (isDev) {
+                console.log(`\n📱 [DEV FALLBACK] SMS failed (${errMsg}). OTP for ${mobile}: ${otp}\n`);
+                return true;
+            }
+            throw new Error(errMsg);
+        }
+        return true;
+    } catch (fetchError) {
+        if (isDev) {
+            console.log(`\n📱 [DEV FALLBACK] SMS error. OTP for ${mobile}: ${otp}\n`);
+            return true;
+        }
+        throw fetchError;
+    }
+}
+
+
+// ─── Phone Login: Send OTP ────────────────────────────────────────────────────
 export async function sendPhoneLoginOtpController(request, response) {
     try {
         const { mobile } = request.body;
 
         if (!mobile) {
-            return response.status(400).json({
-                message: "Mobile number is required",
-                error: true,
-                success: false
-            });
+            return response.status(400).json({ message: 'Mobile number is required', error: true, success: false });
         }
 
-        const normalizedMobile = String(mobile).replace(/\D/g, "").slice(-10);
-
+        const normalizedMobile = String(mobile).replace(/\D/g, '').slice(-10);
         if (normalizedMobile.length !== 10) {
-            return response.status(400).json({
-                message: "Please provide a valid 10 digit mobile number",
-                error: true,
-                success: false
-            });
+            return response.status(400).json({ message: 'Please provide a valid 10-digit mobile number', error: true, success: false });
         }
 
         let user = await UserModel.findOne({ mobile: Number(normalizedMobile) });
 
-        if (user && user.status !== "Active") {
-            return response.status(400).json({
-                message: "Contact to admin",
-                error: true,
-                success: false
-            });
+        if (user && user.status !== 'Active') {
+            return response.status(400).json({ message: 'Account suspended. Contact admin.', error: true, success: false });
         }
 
-        if (!user) {
+        const isNewUser = !user;
+
+        if (isNewUser) {
+            // New user: create a placeholder account (name will be updated after OTP verify)
             const generatedEmail = `phone_${normalizedMobile}@fast2sms.local`;
             const randomPassword = `fast2sms-${normalizedMobile}-${Date.now()}`;
             const salt = await bcryptjs.genSalt(10);
             const hashPassword = await bcryptjs.hash(randomPassword, salt);
-
             user = await UserModel.create({
-                name: `User ${normalizedMobile.slice(-4)}`,
+                name: '',
                 email: generatedEmail,
                 password: hashPassword,
                 mobile: Number(normalizedMobile),
                 verify_email: true,
-                status: "Active",
+                status: 'Active',
             });
         }
 
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
-        const otpExpires = Date.now() + 10 * 60 * 1000;
-
         user.phone_login_otp = otp;
-        user.phone_login_otp_expires = otpExpires;
+        user.phone_login_otp_expires = Date.now() + 10 * 60 * 1000;
         await user.save();
 
-        const apiKey = process.env.FAST2SMS_API_KEY;
+        await sendFast2SMS(normalizedMobile, otp);
 
-        if (!apiKey) {
-            return response.status(500).json({
-                message: "FAST2SMS_API_KEY is not configured",
-                error: true,
-                success: false
-            });
-        }
-
-        const payload = new URLSearchParams({
-            route: "q",
-            message: `Your login OTP is ${otp}. It is valid for 10 minutes.`,
-            language: "english",
-            flash: "0",
-            numbers: normalizedMobile
-        });
-
-        const smsResponse = await fetch('https://www.fast2sms.com/dev/bulkV2', {
-            method: 'POST',
-            headers: {
-                'authorization': apiKey,
-                'Content-Type': 'application/x-www-form-urlencoded'
-            },
-            body: payload.toString()
-        });
-
-        const smsResult = await smsResponse.json();
-
-        if (!smsResponse.ok || smsResult?.return === false) {
-            return response.status(400).json({
-                message: smsResult?.message?.[0] || smsResult?.message || "Unable to send OTP",
-                error: true,
-                success: false
-            });
-        }
-
-        return response.status(200).json({
-            message: "OTP sent successfully",
-            error: false,
-            success: true
-        });
+        return response.status(200).json({ message: 'OTP sent successfully', error: false, success: true });
 
     } catch (error) {
-        return response.status(500).json({
-            message: error.message || error,
-            error: true,
-            success: false
-        });
+        return response.status(500).json({ message: error.message || error, error: true, success: false });
     }
 }
 
+// ─── Phone Login: Verify OTP ─────────────────────────────────────────────────
 export async function verifyPhoneLoginOtpController(request, response) {
     try {
         const { mobile, otp } = request.body;
 
         if (!mobile || !otp) {
-            return response.status(400).json({
-                message: "Mobile number and OTP are required",
-                error: true,
-                success: false
-            });
+            return response.status(400).json({ message: 'Mobile number and OTP are required', error: true, success: false });
         }
 
-        const normalizedMobile = String(mobile).replace(/\D/g, "").slice(-10);
+        const normalizedMobile = String(mobile).replace(/\D/g, '').slice(-10);
         const user = await UserModel.findOne({ mobile: Number(normalizedMobile) });
 
         if (!user) {
-            return response.status(400).json({
-                message: "User not found",
-                error: true,
-                success: false
-            });
+            return response.status(400).json({ message: 'User not found', error: true, success: false });
         }
-
-        if (user.status !== "Active") {
-            return response.status(400).json({
-                message: "Contact to admin",
-                error: true,
-                success: false
-            });
+        if (user.status !== 'Active') {
+            return response.status(400).json({ message: 'Account suspended. Contact admin.', error: true, success: false });
         }
-
-        if (!user.phone_login_otp || user.phone_login_otp !== otp) {
-            return response.status(400).json({
-                message: "Invalid OTP",
-                error: true,
-                success: false
-            });
+        if (!user.phone_login_otp || user.phone_login_otp !== String(otp)) {
+            return response.status(400).json({ message: 'Invalid OTP', error: true, success: false });
         }
-
         if (!user.phone_login_otp_expires || user.phone_login_otp_expires < Date.now()) {
-            return response.status(400).json({
-                message: "OTP expired",
-                error: true,
-                success: false
-            });
+            return response.status(400).json({ message: 'OTP expired. Please request a new one.', error: true, success: false });
         }
 
         user.phone_login_otp = null;
         user.phone_login_otp_expires = null;
         await user.save();
 
+        // If name is empty, user needs to provide their name
+        if (!user.name || user.name.trim().length < 2) {
+            return response.status(200).json({
+                message: 'Please provide your name to complete registration',
+                error: false,
+                success: true,
+                needsName: true,
+            });
+        }
+
         return sendLoginResponse(response, user._id);
     } catch (error) {
-        return response.status(500).json({
-            message: error.message || error,
-            error: true,
-            success: false
-        });
+        return response.status(500).json({ message: error.message || error, error: true, success: false });
+    }
+}
+
+// ─── Phone Login: Complete (set name for new users) ──────────────────────────
+export async function completePhoneLoginController(request, response) {
+    try {
+        const { mobile, name } = request.body;
+
+        if (!mobile || !name || String(name).trim().length < 2) {
+            return response.status(400).json({ message: 'Mobile and name (min 2 chars) are required', error: true, success: false });
+        }
+
+        const normalizedMobile = String(mobile).replace(/\D/g, '').slice(-10);
+        const user = await UserModel.findOne({ mobile: Number(normalizedMobile) });
+
+        if (!user) {
+            return response.status(400).json({ message: 'User not found. Please start login again.', error: true, success: false });
+        }
+        if (user.status !== 'Active') {
+            return response.status(400).json({ message: 'Account suspended. Contact admin.', error: true, success: false });
+        }
+
+        user.name = String(name).trim();
+        await user.save();
+
+        return sendLoginResponse(response, user._id);
+    } catch (error) {
+        return response.status(500).json({ message: error.message || error, error: true, success: false });
+    }
+}
+
+// ─── Phone Register: Send OTP ─────────────────────────────────────────────────
+export async function sendRegisterPhoneOtpController(request, response) {
+    try {
+        const { mobile, name } = request.body;
+
+        if (!name || String(name).trim().length < 2) {
+            return response.status(400).json({ message: 'Full name is required (min 2 characters)', error: true, success: false });
+        }
+        if (!mobile) {
+            return response.status(400).json({ message: 'Mobile number is required', error: true, success: false });
+        }
+
+        const normalizedMobile = String(mobile).replace(/\D/g, '').slice(-10);
+        if (normalizedMobile.length !== 10) {
+            return response.status(400).json({ message: 'Please provide a valid 10-digit mobile number', error: true, success: false });
+        }
+
+        // Check if user already exists with this phone
+        const existing = await UserModel.findOne({ mobile: Number(normalizedMobile) });
+        if (existing && existing.name && existing.name.trim().length >= 2) {
+            return response.status(400).json({ message: 'An account with this phone number already exists. Please login instead.', error: true, success: false });
+        }
+
+        // Create or reuse placeholder user
+        let user = existing;
+        if (!user) {
+            const generatedEmail = `phone_${normalizedMobile}@fast2sms.local`;
+            const randomPassword = `fast2sms-${normalizedMobile}-${Date.now()}`;
+            const salt = await bcryptjs.genSalt(10);
+            const hashPassword = await bcryptjs.hash(randomPassword, salt);
+            user = await UserModel.create({
+                name: '',
+                email: generatedEmail,
+                password: hashPassword,
+                mobile: Number(normalizedMobile),
+                verify_email: true,
+                status: 'Active',
+            });
+        }
+
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        user.phone_login_otp = otp;
+        user.phone_login_otp_expires = Date.now() + 10 * 60 * 1000;
+        await user.save();
+
+        await sendFast2SMS(normalizedMobile, otp);
+
+        return response.status(200).json({ message: 'OTP sent successfully', error: false, success: true });
+
+    } catch (error) {
+        return response.status(500).json({ message: error.message || error, error: true, success: false });
+    }
+}
+
+// ─── Phone Register: Verify OTP ──────────────────────────────────────────────
+export async function verifyRegisterPhoneOtpController(request, response) {
+    try {
+        const { mobile, otp, name } = request.body;
+
+        if (!mobile || !otp) {
+            return response.status(400).json({ message: 'Mobile and OTP are required', error: true, success: false });
+        }
+        if (!name || String(name).trim().length < 2) {
+            return response.status(400).json({ message: 'Name is required', error: true, success: false });
+        }
+
+        const normalizedMobile = String(mobile).replace(/\D/g, '').slice(-10);
+        const user = await UserModel.findOne({ mobile: Number(normalizedMobile) });
+
+        if (!user) {
+            return response.status(400).json({ message: 'User not found. Please start registration again.', error: true, success: false });
+        }
+        if (!user.phone_login_otp || user.phone_login_otp !== String(otp)) {
+            return response.status(400).json({ message: 'Invalid OTP', error: true, success: false });
+        }
+        if (!user.phone_login_otp_expires || user.phone_login_otp_expires < Date.now()) {
+            return response.status(400).json({ message: 'OTP expired. Please request a new one.', error: true, success: false });
+        }
+
+        user.name = String(name).trim();
+        user.phone_login_otp = null;
+        user.phone_login_otp_expires = null;
+        await user.save();
+
+        return sendLoginResponse(response, user._id);
+    } catch (error) {
+        return response.status(500).json({ message: error.message || error, error: true, success: false });
     }
 }
 
