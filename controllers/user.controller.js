@@ -646,6 +646,60 @@ async function sendFast2SMS(mobile, otp) {
     }
 }
 
+// ─── Helper: Check and Update OTP Rate Limit ──────────────────────────────────
+async function checkOTPRateLimit(user) {
+    const now = Date.now();
+    const MAX_OTP_ATTEMPTS = 2; // Maximum 2 OTP requests
+    const SUSPENSION_DURATION = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+    const RESET_WINDOW = 24 * 60 * 60 * 1000; // Reset counter after 24 hours
+
+    // Check if user is currently suspended
+    if (user.otp_suspended_until && new Date(user.otp_suspended_until) > now) {
+        const remainingTime = Math.ceil((new Date(user.otp_suspended_until) - now) / (60 * 60 * 1000)); // hours
+        return {
+            allowed: false,
+            message: `Your number is temporarily suspended due to too many OTP requests. Please try again after ${remainingTime} hours.`,
+            suspendedUntil: user.otp_suspended_until
+        };
+    }
+
+    // Reset attempts if reset window has passed
+    if (user.otp_attempts_reset_at && new Date(user.otp_attempts_reset_at) < now) {
+        user.otp_attempts = 0;
+        user.otp_attempts_reset_at = null;
+        user.otp_suspended_until = null;
+    }
+
+    // Check if user has exceeded max attempts
+    if (user.otp_attempts >= MAX_OTP_ATTEMPTS) {
+        // Suspend the user for 24 hours
+        user.otp_suspended_until = new Date(now + SUSPENSION_DURATION);
+        await user.save();
+        
+        return {
+            allowed: false,
+            message: `You have exceeded the maximum OTP requests (${MAX_OTP_ATTEMPTS}). Your number is suspended for 24 hours.`,
+            suspendedUntil: user.otp_suspended_until
+        };
+    }
+
+    // Increment attempts
+    user.otp_attempts += 1;
+    
+    // Set reset time on first attempt
+    if (user.otp_attempts === 1) {
+        user.otp_attempts_reset_at = new Date(now + RESET_WINDOW);
+    }
+
+    await user.save();
+
+    return {
+        allowed: true,
+        attemptsRemaining: MAX_OTP_ATTEMPTS - user.otp_attempts,
+        message: `OTP sent successfully. You have ${MAX_OTP_ATTEMPTS - user.otp_attempts} more attempt(s) remaining.`
+    };
+}
+
 
 // ─── Phone Login: Send OTP ────────────────────────────────────────────────────
 export async function sendPhoneLoginOtpController(request, response) {
@@ -682,6 +736,20 @@ export async function sendPhoneLoginOtpController(request, response) {
                 mobile: Number(normalizedMobile),
                 verify_email: true,
                 status: 'Active',
+                otp_attempts: 0,
+                otp_attempts_reset_at: null,
+                otp_suspended_until: null,
+            });
+        }
+
+        // Check OTP rate limit
+        const rateLimitCheck = await checkOTPRateLimit(user);
+        if (!rateLimitCheck.allowed) {
+            return response.status(429).json({ 
+                message: rateLimitCheck.message, 
+                error: true, 
+                success: false,
+                suspendedUntil: rateLimitCheck.suspendedUntil
             });
         }
 
@@ -692,7 +760,12 @@ export async function sendPhoneLoginOtpController(request, response) {
 
         await sendFast2SMS(normalizedMobile, otp);
 
-        return response.status(200).json({ message: 'OTP sent successfully', error: false, success: true });
+        return response.status(200).json({ 
+            message: rateLimitCheck.message, 
+            error: false, 
+            success: true,
+            attemptsRemaining: rateLimitCheck.attemptsRemaining
+        });
 
     } catch (error) {
         return response.status(500).json({ message: error.message || error, error: true, success: false });
@@ -724,8 +797,12 @@ export async function verifyPhoneLoginOtpController(request, response) {
             return response.status(400).json({ message: 'OTP expired. Please request a new one.', error: true, success: false });
         }
 
+        // OTP verified successfully - Reset rate limit counters
         user.phone_login_otp = null;
         user.phone_login_otp_expires = null;
+        user.otp_attempts = 0;
+        user.otp_attempts_reset_at = null;
+        user.otp_suspended_until = null;
         await user.save();
 
         // If name is empty, user needs to provide their name
@@ -809,6 +886,20 @@ export async function sendRegisterPhoneOtpController(request, response) {
                 mobile: Number(normalizedMobile),
                 verify_email: true,
                 status: 'Active',
+                otp_attempts: 0,
+                otp_attempts_reset_at: null,
+                otp_suspended_until: null,
+            });
+        }
+
+        // Check OTP rate limit
+        const rateLimitCheck = await checkOTPRateLimit(user);
+        if (!rateLimitCheck.allowed) {
+            return response.status(429).json({ 
+                message: rateLimitCheck.message, 
+                error: true, 
+                success: false,
+                suspendedUntil: rateLimitCheck.suspendedUntil
             });
         }
 
@@ -819,7 +910,12 @@ export async function sendRegisterPhoneOtpController(request, response) {
 
         await sendFast2SMS(normalizedMobile, otp);
 
-        return response.status(200).json({ message: 'OTP sent successfully', error: false, success: true });
+        return response.status(200).json({ 
+            message: rateLimitCheck.message, 
+            error: false, 
+            success: true,
+            attemptsRemaining: rateLimitCheck.attemptsRemaining
+        });
 
     } catch (error) {
         return response.status(500).json({ message: error.message || error, error: true, success: false });
@@ -851,9 +947,13 @@ export async function verifyRegisterPhoneOtpController(request, response) {
             return response.status(400).json({ message: 'OTP expired. Please request a new one.', error: true, success: false });
         }
 
+        // OTP verified successfully - Reset rate limit counters
         user.name = String(name).trim();
         user.phone_login_otp = null;
         user.phone_login_otp_expires = null;
+        user.otp_attempts = 0;
+        user.otp_attempts_reset_at = null;
+        user.otp_suspended_until = null;
         await user.save();
 
         return sendLoginResponse(response, user._id);

@@ -69,6 +69,19 @@ const userSchema = mongoose.Schema({
         type: Date,
         default: null
     },
+    // OTP Rate Limiting - Track attempts and suspension
+    otp_attempts: {
+        type: Number,
+        default: 0
+    },
+    otp_attempts_reset_at: {
+        type: Date,
+        default: null
+    },
+    otp_suspended_until: {
+        type: Date,
+        default: null
+    },
     login_otp: {
         type: String,
         default: null
