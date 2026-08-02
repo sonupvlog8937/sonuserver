@@ -427,14 +427,14 @@ export async function getOrderDetailsController(request, response) {
             // Paginated query
             orderlist = await OrderModel.find()
                 .sort({ createdAt: -1 })
-                .populate('delivery_address userId deliveryAssignment.riderId')
+                .populate('delivery_address userId deliveryAssignment.riderId products.sellerId')
                 .skip((page - 1) * limit)
                 .limit(parseInt(limit));
         } else {
             // Fetch all orders (no pagination)
             orderlist = await OrderModel.find()
                 .sort({ createdAt: -1 })
-                .populate('delivery_address userId deliveryAssignment.riderId');
+                .populate('delivery_address userId deliveryAssignment.riderId products.sellerId');
         }
 
         const total = page && limit ? await OrderModel.countDocuments() : orderlist.length;
