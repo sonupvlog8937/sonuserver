@@ -587,9 +587,9 @@ export async function loginUserController(request, response) {
         });
     }
 }
-// ─── Helper: Send OTP SMS via Fast2SMS ─────────────────────────────────────────
+// ─── Helper: Send OTP SMS via ApiTxt ───────────────────────────────────────────
 async function sendFast2SMS(mobile, otp) {
-    const apiKey = process.env.FAST2SMS_API_KEY;
+    const apiKey = process.env.APITXT_AUTH_KEY;
     const isDev = process.env.NODE_ENV !== 'production';
 
     if (!apiKey) {
@@ -597,37 +597,32 @@ async function sendFast2SMS(mobile, otp) {
             console.log(`\n📱 [DEV MODE] OTP for ${mobile}: ${otp}\n`);
             return true;
         }
-        throw new Error('FAST2SMS_API_KEY is not configured in server .env');
+        throw new Error('APITXT_AUTH_KEY is not configured in server .env');
     }
 
-    // Use Fast2SMS quick transactional route
-    const payload = new URLSearchParams({
-        route: 'q',
-        message: `Your ${process.env.STORE_NAME || 'Zeedaddy'} OTP is ${otp}. Valid for 10 minutes. Do not share with anyone.`,
-        language: 'english',
-        flash: '0',
-        numbers: mobile,
-    });
+    // ApiTxt API endpoint
+    // https://apitxt.com/api/sendOTP?authkey=YOUR_KEY&mobile=919999999999&otp=4521
+    // https://www.fast2sms.com/dev/bulkV2
+    // FAST2SMS_API_KEY
+    const apiUrl = `https://apitxt.com/api/sendOTP?authkey=${apiKey}&mobile=${mobile}&otp=${otp}`;
 
-    console.log(`[Fast2SMS] Sending OTP ${otp} to: ${mobile}`);
+    console.log(`[ApiTxt] Sending OTP ${otp} to: ${mobile}`);
 
     try {
-        const smsResponse = await fetch('https://www.fast2sms.com/dev/bulkV2', {
-            method: 'POST',
+        const smsResponse = await fetch(apiUrl, {
+            method: 'GET',
             headers: {
-                'authorization': apiKey,
-                'Content-Type': 'application/x-www-form-urlencoded',
+                'Content-Type': 'application/json',
             },
-            body: payload.toString(),
         });
 
         const smsResult = await smsResponse.json();
-        console.log('[Fast2SMS] Response:', JSON.stringify(smsResult));
+        console.log('[ApiTxt] Response:', JSON.stringify(smsResult));
 
-        if (!smsResponse.ok || smsResult?.return === false || smsResult?.status_code === 999) {
-            const errMsg = Array.isArray(smsResult?.message)
-                ? smsResult.message.join(', ')
-                : (smsResult?.message || 'Unable to send SMS');
+        // Check if SMS was sent successfully
+        // Adjust this condition based on ApiTxt's actual response format
+        if (!smsResponse.ok || smsResult?.success === false) {
+            const errMsg = smsResult?.message || 'Unable to send SMS';
 
             // In dev mode, fall back to console log
             if (isDev) {
