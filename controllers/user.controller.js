@@ -604,7 +604,10 @@ async function sendFast2SMS(mobile, otp) {
     // https://apitxt.com/api/sendOTP?authkey=YOUR_KEY&mobile=919999999999&otp=4521
     // https://www.fast2sms.com/dev/bulkV2
     // FAST2SMS_API_KEY
-    const apiUrl = `https://apitxt.com/api/sendOTP?authkey=${apiKey}&mobile=${mobile}&otp=${otp}`;
+    
+    // Custom SMS message with header
+    const smsMessage = `Your OTP is: ${otp}. Valid for 10 minutes. - Zeedaddy`;
+    const apiUrl = `https://apitxt.com/api/sendOTP?authkey=${apiKey}&mobile=${mobile}&otp=${otp}&message=${encodeURIComponent(smsMessage)}`;
 
     console.log(`[ApiTxt] Sending OTP ${otp} to: ${mobile}`);
 
@@ -644,7 +647,7 @@ async function sendFast2SMS(mobile, otp) {
 // ─── Helper: Check and Update OTP Rate Limit ──────────────────────────────────
 async function checkOTPRateLimit(user) {
     const now = Date.now();
-    const MAX_OTP_ATTEMPTS = 2; // Maximum 2 OTP requests
+    const MAX_OTP_ATTEMPTS = 3; // Maximum 3 OTP requests
     const SUSPENSION_DURATION = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
     const RESET_WINDOW = 24 * 60 * 60 * 1000; // Reset counter after 24 hours
 
