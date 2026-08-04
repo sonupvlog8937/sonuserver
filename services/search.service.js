@@ -499,75 +499,106 @@ export const executeSuggestions = async ({ query = "", limit = 10 } = {}) => {
 
     const expandedTerms = await getExpandedSearchTerms(cleanQuery);
     const productQuery = buildProductQuery(expandedTerms.slice(0, 5));
+    const groceryQuery = buildGroceryQuery(expandedTerms.slice(0, 5));
+    const restaurantQuery = buildRestaurantItemQuery(expandedTerms.slice(0, 5));
 
-  const [products, topSearches] = await Promise.all([
-    Object.keys(productQuery).length
-      ? ProductModel.find(productQuery)
-          .select("name brand images price discount catName subCat rating sale isFeatured title searchKeywords")
-          .limit(30)
-          .lean()
-      : [],
-    topSearchRepository.getTop(10),
-  ]);
+    const [products, groceryProducts, restaurantItems, topSearches] = await Promise.all([
+      Object.keys(productQuery).length
+        ? ProductModel.find(productQuery)
+            .select("name brand images price discount catName subCat rating sale isFeatured title searchKeywords")
+            .limit(30)
+            .lean()
+        : [],
+      Object.keys(groceryQuery).length
+        ? GroceryProductModel.find(groceryQuery)
+            .select("name title description images image price discountPrice stock isFeatured soldCount shopId")
+            .limit(20)
+            .lean()
+        : [],
+      Object.keys(restaurantQuery).length
+        ? RestaurantItemModel.find(restaurantQuery)
+            .select("itemName title description images image price discountPrice isAvailable isFeatured soldCount restaurantId")
+            .limit(20)
+            .lean()
+        : [],
+      topSearchRepository.getTop(10),
+    ]);
 
-  const terms = await getMeaningfulTokens(cleanQuery);
-  const mappedProducts = [
-    ...products.map((p) => mapProduct(p, cleanQuery, terms)),
-  ]
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit);
+    // Get shop and restaurant names for grocery and restaurant items
+    const shopIds = [...new Set(groceryProducts.map((g) => String(g.shopId)).filter(Boolean))];
+    const restaurantIds = [...new Set(restaurantItems.map((r) => String(r.restaurantId)).filter(Boolean))];
 
-  const expandedSynonyms = await expandSynonyms(cleanQuery);
-  const textSuggestions = rankSuggestions(
-    cleanQuery,
-    [
-      ...mappedProducts.map((p) => p.name),
-      ...topSearches.map((t) => t.keyword),
-      ...expandedSynonyms,
-    ],
-    { limit, getLabel: (x) => x },
-  );
+    const [shops, restaurants] = await Promise.all([
+      shopIds.length ? GroceryShopModel.find({ _id: { $in: shopIds } }).select("shopName shopType").lean() : [],
+      restaurantIds.length ? RestaurantModel.find({ _id: { $in: restaurantIds } }).select("restaurantName").lean() : [],
+    ]);
 
-  const vocabulary = buildVocabulary(products, (p) => [p.name, p.brand, p.catName, ...(p.keywords || [])]);
-  const didYouMean = getSpellCorrection(normalizeSearchText(cleanQuery), vocabulary);
+    const shopMap = Object.fromEntries(shops.map((s) => [String(s._id), s]));
+    const restaurantMap = Object.fromEntries(restaurants.map((r) => [String(r._id), r]));
 
-  const brandRegex = buildSafeRegex(cleanQuery);
-  const brands = brandRegex
-    ? (await ProductModel.distinct("brand", { brand: brandRegex })).slice(0, 5).map((name) => ({
-        name,
-        highlightedName: highlightSearchText(name, cleanQuery),
-        type: "brand",
-      }))
-    : [];
+    const terms = await getMeaningfulTokens(cleanQuery);
+    const mappedProducts = [
+      ...products.map((p) => mapProduct(p, cleanQuery, terms)),
+      ...groceryProducts.map((g) => mapGroceryProduct(g, cleanQuery, terms, shopMap)),
+      ...restaurantItems.map((r) => mapRestaurantItem(r, cleanQuery, terms, restaurantMap)),
+    ]
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit);
 
-  const categoryRegex = buildSafeRegex(cleanQuery);
-  const categories = categoryRegex
-    ? (await CategoryModel.find({ name: categoryRegex }).limit(5).lean()).map((c) => ({
-        _id: c._id,
-        name: c.name,
-        highlightedName: highlightSearchText(c.name, cleanQuery),
-        type: "category",
-      }))
-    : [];
+    const expandedSynonyms = await expandSynonyms(cleanQuery);
+    const textSuggestions = rankSuggestions(
+      cleanQuery,
+      [
+        ...mappedProducts.map((p) => p.name),
+        ...topSearches.map((t) => t.keyword),
+        ...expandedSynonyms,
+      ],
+      { limit, getLabel: (x) => x },
+    );
 
-  const response = {
-    success: true,
-    query: cleanQuery,
-    didYouMean,
-    suggestions: textSuggestions,
-    products: mappedProducts,
-    categories,
-    brands,
-    topSearches: topSearches.map((t) => t.keyword),
-    loading: false,
-  };
+    const vocabulary = buildVocabulary(
+      [...products, ...groceryProducts, ...restaurantItems],
+      (p) => [p.name || p.itemName, p.brand, p.catName, ...(p.keywords || [])]
+    );
+    const didYouMean = getSpellCorrection(normalizeSearchText(cleanQuery), vocabulary);
 
-  // cacheSet(cacheKey, response, 30_000);
-  return response;
-} catch (error) {
-  console.error("❌ Error in executeSuggestions:", error);
-  throw error;
-}
+    const brandRegex = buildSafeRegex(cleanQuery);
+    const brands = brandRegex
+      ? (await ProductModel.distinct("brand", { brand: brandRegex })).slice(0, 5).map((name) => ({
+          name,
+          highlightedName: highlightSearchText(name, cleanQuery),
+          type: "brand",
+        }))
+      : [];
+
+    const categoryRegex = buildSafeRegex(cleanQuery);
+    const categories = categoryRegex
+      ? (await CategoryModel.find({ name: categoryRegex }).limit(5).lean()).map((c) => ({
+          _id: c._id,
+          name: c.name,
+          highlightedName: highlightSearchText(c.name, cleanQuery),
+          type: "category",
+        }))
+      : [];
+
+    const response = {
+      success: true,
+      query: cleanQuery,
+      didYouMean,
+      suggestions: textSuggestions,
+      products: mappedProducts,
+      categories,
+      brands,
+      topSearches: topSearches.map((t) => t.keyword),
+      loading: false,
+    };
+
+    // cacheSet(cacheKey, response, 30_000);
+    return response;
+  } catch (error) {
+    console.error("❌ Error in executeSuggestions:", error);
+    throw error;
+  }
 };
 
 /**
