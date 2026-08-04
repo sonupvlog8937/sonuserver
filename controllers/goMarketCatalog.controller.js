@@ -145,8 +145,13 @@ const sortForCatalogTab = (tab) => {
 
 const buildGroceryCatalogFilter = async (req, shopId) => {
   const filter = buildQuery({ ...req.query, shopId }, ["name", "description", "title", "keywords", "tags", "searchKeywords", "seoDescription", "attributes"]);
+  const hasSearchQuery = Boolean(String(req.query.q || req.query.search || "").trim());
+  
   if (req.query.inStock === "true") filter.stock = { $gt: 0 };
-  if (String(req.query.tab || "").toLowerCase() === "featured") filter.isFeatured = true;
+  
+  // Only apply tab filter if NOT searching
+  if (String(req.query.tab || "").toLowerCase() === "featured" && !hasSearchQuery) filter.isFeatured = true;
+  
   if (req.query.categoryId && isObjectId(req.query.categoryId)) filter.categoryId = req.query.categoryId;
   if (req.query.subCategoryId && isObjectId(req.query.subCategoryId)) filter.subCategoryId = req.query.subCategoryId;
   if (req.query.subSubCategoryId && isObjectId(req.query.subSubCategoryId)) filter.subSubCategoryId = req.query.subSubCategoryId;
@@ -686,10 +691,17 @@ export const searchShopProducts = async (req, res) => {
     shop.productReviewCount = productStats.reviewCount;
 
     const filter = await buildGroceryCatalogFilter(req, shopId);
+    const queryLabel = String(req.query.q || req.query.search || "").trim();
+    
+    // Debug logging
+    console.log(`🔍 [Grocery Search] Query: "${queryLabel}" | Filter:`, JSON.stringify(filter));
+    
     const sort = productSort(req.query);
     const result = await paginate(GroceryProduct, filter, { ...req.query, sort }, "categoryId subCategoryId subSubCategoryId");
     const filterMeta = await buildShopFilterMeta(shopId);
-    const queryLabel = String(req.query.q || req.query.search || "").trim();
+
+    // Debug logging
+    console.log(`✅ [Grocery Search] Found ${result.data?.length || 0} products`);
 
     // Add shop location and ID to each product
     const productsWithShopData = (await applyProductReviewStats(result.data || [], baseUrl)).map((p) => ({
@@ -707,6 +719,7 @@ export const searchShopProducts = async (req, res) => {
       pagination: result.pagination,
     });
   } catch (error) {
+    console.error(`❌ [Grocery Search] Error:`, error);
     sendError(res, error);
   }
 };
@@ -727,7 +740,11 @@ const getRestaurantItemFoodType = (item = {}) => {
 const buildRestaurantCatalogFilter = async (req, restaurantId) => {
   const filter = buildQuery({ ...req.query, restaurantId }, ["itemName", "description", "title", "keywords", "tags", "searchKeywords", "seoDescription", "attributes"]);
   const tab = String(req.query.tab || "featured").toLowerCase();
-  if (tab === "featured") filter.isFeatured = true;
+  const hasSearchQuery = Boolean(String(req.query.q || req.query.search || "").trim());
+  
+  // Only apply tab filter if NOT searching
+  if (tab === "featured" && !hasSearchQuery) filter.isFeatured = true;
+  
   if (req.query.availableOnly === "true" || req.query.inStock === "true") filter.isAvailable = { $ne: false };
   if (req.query.menuId && isObjectId(req.query.menuId)) filter.menuId = req.query.menuId;
   if (req.query.categoryId && isObjectId(req.query.categoryId)) filter.categoryId = req.query.categoryId;
@@ -840,9 +857,22 @@ export const listRestaurantItemsCatalog = async (req, res) => {
     restaurant.totalMenus = totalMenus;
 
     const filter = await buildRestaurantCatalogFilter(req, restaurantId);
+    const queryLabel = String(req.query.q || req.query.search || "").trim();
+    
+    // Debug logging
+    if (queryLabel) {
+      console.log(`🔍 [Restaurant Search] Query: "${queryLabel}" | Filter:`, JSON.stringify(filter));
+    }
+    
     const tab = String(req.query.tab || "featured").toLowerCase();
     const sort = req.query.sort ? itemSort(req.query) : itemSort({ tab });
     const result = await paginate(RestaurantItem, filter, { ...req.query, sort }, "categoryId subCategoryId subSubCategoryId menuId", "foodType");
+    
+    // Debug logging
+    if (queryLabel) {
+      console.log(`✅ [Restaurant Search] Found ${result.data?.length || 0} items`);
+    }
+    
     const filterMeta = await buildRestaurantFilterMeta(restaurantId);
     const baseUrl = apiBaseFromRequest(req);
     const normalizedRestaurant = {
