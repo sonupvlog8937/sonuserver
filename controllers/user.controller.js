@@ -723,7 +723,7 @@ export async function sendPhoneLoginOtpController(request, response) {
 
         if (isNewUser) {
             // New user: create a placeholder account (name will be updated after OTP verify)
-            const generatedEmail = `phone_${normalizedMobile}@fast2sms.local`;
+            const generatedEmail = `phone_${normalizedMobile}@gmail.com`;
             const randomPassword = `fast2sms-${normalizedMobile}-${Date.now()}`;
             const salt = await bcryptjs.genSalt(10);
             const hashPassword = await bcryptjs.hash(randomPassword, salt);
@@ -873,7 +873,7 @@ export async function sendRegisterPhoneOtpController(request, response) {
         // Create or reuse placeholder user
         let user = existing;
         if (!user) {
-            const generatedEmail = `phone_${normalizedMobile}@fast2sms.local`;
+            const generatedEmail = `phone_${normalizedMobile}@gmail.com`;
             const randomPassword = `fast2sms-${normalizedMobile}-${Date.now()}`;
             const salt = await bcryptjs.genSalt(10);
             const hashPassword = await bcryptjs.hash(randomPassword, salt);
