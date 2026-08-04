@@ -26,7 +26,7 @@ export const resources = {
 
 export const isObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
 
-export const buildQuery = (query = {}, searchFields = []) => {
+export const buildQuery = (query = {}, searchFields = [], options = {}) => {
   const filter = {};
   if (query.marketId && isObjectId(query.marketId)) filter.marketId = query.marketId;
   if (query.shopId && isObjectId(query.shopId)) filter.shopId = query.shopId;
@@ -38,9 +38,16 @@ export const buildQuery = (query = {}, searchFields = []) => {
   if (query.parentId && isObjectId(query.parentId)) filter.parentId = query.parentId;
   if (query.parentModel) filter.parentModel = query.parentModel;
   if (query.isOpen !== undefined) filter.isOpen = query.isOpen === "true" || query.isOpen === true;
+  
   const term = String(query.search || query.q || "").trim();
   if (term && searchFields.length) {
-    filter.$or = searchFields.map((field) => ({ [field]: { $regex: term, $options: "i" } }));
+    // Escape special regex characters for safety
+    const escapedTerm = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    
+    // Use regex for partial matching with escaped term
+    filter.$or = searchFields.map((field) => ({ 
+      [field]: { $regex: escapedTerm, $options: "i" } 
+    }));
   }
   return filter;
 };
