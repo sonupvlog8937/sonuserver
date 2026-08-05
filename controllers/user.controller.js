@@ -588,7 +588,7 @@ export async function loginUserController(request, response) {
     }
 }
 // ─── Helper: Send OTP SMS via ApiTxt ───────────────────────────────────────────
-async function sendFast2SMS(mobile, otp) {
+export async function sendFast2SMS(mobile, otp) {
     const apiKey = process.env.APITXT_AUTH_KEY;
     const isDev = process.env.NODE_ENV !== 'production';
 
