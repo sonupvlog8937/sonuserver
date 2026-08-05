@@ -15,6 +15,7 @@ import { getRazorpayCredentials } from "./payment.controller.js";
 import { calculateGoMarketFees, isGoMarketOrder } from "../utils/goMarketPricing.js";
 import AppSettings from "../models/appSettings.model.js";
 import { haversineKm, resolveCoordPair, formatDistanceKm } from "../utils/geoCoords.js";
+import { sendFast2SMS } from "./user.controller.js";
 
 
 const isRazorpaySignaturePayload = (body = {}) =>
@@ -1685,33 +1686,55 @@ export const confirmRiderOrderController = async (request, response) => {
 
 export const sendDeliveryOtpController = async (request, response) => {
     try {
-        const order = await OrderModel.findOne({ _id: request.params.id, "deliveryAssignment.riderId": request.userId }).populate("userId", "name email");
+        const order = await OrderModel.findOne({ _id: request.params.id, "deliveryAssignment.riderId": request.userId })
+            .populate("userId", "name email")
+            .populate("delivery_address", "mobile");
+        
         if (!order) return response.status(404).json({ success: false, error: true, message: "Assigned order not found" });
+        
         const otp = String(Math.floor(100000 + Math.random() * 900000));
         order.deliveryAssignment.deliveryOtp = otp;
         order.deliveryAssignment.deliveryOtpExpires = new Date(Date.now() + 10 * 60 * 1000);
         order.deliveryAssignment.status = "otp_sent";
         await order.save();
-        if (order.userId?.email) {
-            await sendEmailFun({
-                sendTo: order.userId.email,
-                subject: `🔐 Delivery OTP for Order #${order._id}`,
-                text: `Your delivery OTP is ${otp}. Valid for 10 minutes. Never share it with anyone.`,
-                html: getOtpEmailHtml({
-                    customerName: order.userId.name,
-                    otp,
-                    orderId: `#${order._id}`,
-                    trackingUrl: `https://zeedaddy.in/my-orders`,
-                    supportUrl: "https://zeedaddy.in/support",
-                    customerEmail: order.userId.email,
-                }),
+        
+        // Send OTP via SMS to customer's mobile number (from delivery address)
+        const customerMobile = order.delivery_address?.mobile;
+        
+        if (!customerMobile) {
+            return response.status(400).json({ 
+                success: false, 
+                error: true, 
+                message: "Customer mobile number not found in delivery address" 
             });
         }
-        return response.json({ success: true, error: false, message: "Delivery OTP sent to customer email" });
+        
+        try {
+            await sendFast2SMS(customerMobile, otp);
+            return response.json({ 
+                success: true, 
+                error: false, 
+                message: `Delivery OTP sent to customer mobile ${customerMobile}` 
+            });
+        } catch (smsError) {
+            console.error('SMS sending error:', smsError);
+            // Rollback OTP status if SMS fails
+            order.deliveryAssignment.deliveryOtp = "";
+            order.deliveryAssignment.deliveryOtpExpires = null;
+            order.deliveryAssignment.status = "confirmed";
+            await order.save();
+            
+            return response.status(500).json({ 
+                success: false, 
+                error: true, 
+                message: "Failed to send OTP via SMS. Please try again." 
+            });
+        }
     } catch (error) {
         return response.status(500).json({ success: false, error: true, message: error.message || error });
     }
 };
+
 
 export const deliverRiderOrderController = async (request, response) => {
     try {
