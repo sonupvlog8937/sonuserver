@@ -353,44 +353,6 @@ export const createOrderController = async (request, response) => {
             adjusted: isFirstOrder
         });
 
-        // Get user's saved goMarketLocation from User model
-        const user = await UserModel.findById(request.body.userId).select('goMarketLocation').lean();
-        let userLocationGeoJSON = null;
-        
-        // Use saved goMarketLocation if available
-        if (user?.goMarketLocation?.coordinates && 
-            Array.isArray(user.goMarketLocation.coordinates) && 
-            user.goMarketLocation.coordinates.length === 2 &&
-            user.goMarketLocation.coordinates[0] !== 0 && 
-            user.goMarketLocation.coordinates[1] !== 0) {
-            
-            userLocationGeoJSON = {
-                type: "Point",
-                coordinates: user.goMarketLocation.coordinates, // Already in GeoJSON format [lng, lat]
-                address: user.goMarketLocation.address || `Location: ${user.goMarketLocation.coordinates[1].toFixed(6)}, ${user.goMarketLocation.coordinates[0].toFixed(6)}`
-            };
-            
-            console.log("📍 Using saved goMarketLocation from User model:", userLocationGeoJSON);
-        } else {
-            // Fallback: Convert request userLocation to GeoJSON format
-            const rawUserLocation = goMarketDistance.userLocation || request.body.userLocation;
-            
-            if (rawUserLocation) {
-                const lat = Number(rawUserLocation.lat || rawUserLocation.latitude || 0);
-                const lng = Number(rawUserLocation.lng || rawUserLocation.longitude || 0);
-                
-                if (lat !== 0 && lng !== 0) {
-                    userLocationGeoJSON = {
-                        type: "Point",
-                        coordinates: [lng, lat], // GeoJSON format: [longitude, latitude]
-                        address: rawUserLocation.address || `Location: ${lat.toFixed(6)}, ${lng.toFixed(6)}`
-                    };
-                    
-                    console.log("📍 Using request userLocation (fallback):", userLocationGeoJSON);
-                }
-            }
-        }
-
         let order = new OrderModel({
             userId: request.body.userId,
             products: productsWithSeller,
@@ -407,7 +369,7 @@ export const createOrderController = async (request, response) => {
                 orderType: goMarketOrder ? "go_market" : "standard",
                 distanceKm: Number(goMarketDistance.distanceKm || 0),
                 distanceDisplay: goMarketDistance.distanceDisplay || null,
-                userLocation: userLocationGeoJSON,
+                userLocation: goMarketDistance.userLocation || request.body.userLocation || null,
                 farthestSource: goMarketDistance.farthestSource || null,
             },
             date: request.body.date
@@ -418,8 +380,7 @@ export const createOrderController = async (request, response) => {
             orderType: order.goMarketData.orderType,
             userLocation: order.goMarketData.userLocation,
             distanceKm: order.goMarketData.distanceKm,
-            hasCoordinates: order.goMarketData.userLocation?.coordinates ? 'YES' : 'NO',
-            coordinates: order.goMarketData.userLocation?.coordinates
+            hasCoordinates: order.goMarketData.userLocation?.coordinates ? 'YES' : 'NO'
         });
 
         if (!order) {
@@ -639,61 +600,6 @@ export const captureOrderPaypalController = async (request, response) => {
             totalAmt = totalAmt - (request.body.shippingFee || 0) - (request.body.deliveryFee || 0);
         }
 
-        // Get user's saved goMarketLocation from User model
-        const user = await UserModel.findById(request.body.userId).select('goMarketLocation').lean();
-        let userLocationGeoJSON = null;
-        
-        // Use saved goMarketLocation if available
-        if (user?.goMarketLocation?.coordinates && 
-            Array.isArray(user.goMarketLocation.coordinates) && 
-            user.goMarketLocation.coordinates.length === 2 &&
-            user.goMarketLocation.coordinates[0] !== 0 && 
-            user.goMarketLocation.coordinates[1] !== 0) {
-            
-            userLocationGeoJSON = {
-                type: "Point",
-                coordinates: user.goMarketLocation.coordinates, // Already in GeoJSON format [lng, lat]
-                address: user.goMarketLocation.address || `Location: ${user.goMarketLocation.coordinates[1].toFixed(6)}, ${user.goMarketLocation.coordinates[0].toFixed(6)}`
-            };
-            
-            console.log("📍 PayPal Order - Using saved goMarketLocation from User model:", userLocationGeoJSON);
-        } else {
-            // Fallback: Convert request userLocation to GeoJSON format
-            const rawUserLocation = request.body.userLocation;
-            
-            if (rawUserLocation) {
-                const lat = Number(rawUserLocation.lat || rawUserLocation.latitude || 0);
-                const lng = Number(rawUserLocation.lng || rawUserLocation.longitude || 0);
-                
-                if (lat !== 0 && lng !== 0) {
-                    userLocationGeoJSON = {
-                        type: "Point",
-                        coordinates: [lng, lat], // GeoJSON format: [longitude, latitude]
-                        address: rawUserLocation.address || `Location: ${lat.toFixed(6)}, ${lng.toFixed(6)}`
-                    };
-                    
-                    console.log("📍 PayPal Order - Using request userLocation (fallback):", userLocationGeoJSON);
-                }
-            }
-        }
-
-        const goMarketOrder = isGoMarketOrder(productsWithSeller);
-        let goMarketDistance = { distanceKm: 0, distanceDisplay: null, farthestSource: null };
-        
-        if (goMarketOrder && userLocationGeoJSON) {
-            // Convert GeoJSON back to {lat, lng} for distance calculation
-            const locationForCalc = {
-                lat: userLocationGeoJSON.coordinates[1],
-                lng: userLocationGeoJSON.coordinates[0]
-            };
-            
-            goMarketDistance = await computeGoMarketDistance({
-                products: productsWithSeller,
-                userId: request.body.userId,
-                requestLocation: locationForCalc,
-            });
-        }
-
         const orderInfo = {
             userId: request.body.userId,
             products: productsWithSeller,
@@ -704,13 +610,6 @@ export const captureOrderPaypalController = async (request, response) => {
             shippingFee: shippingFee,
             deliveryFee: deliveryFee,
             discount_amount: request.body.discount_amount || request.body.discountAmount || 0,
-            goMarketData: {
-                orderType: goMarketOrder ? "go_market" : "standard",
-                distanceKm: Number(goMarketDistance.distanceKm || 0),
-                distanceDisplay: goMarketDistance.distanceDisplay || null,
-                userLocation: userLocationGeoJSON,
-                farthestSource: goMarketDistance.farthestSource || null,
-            },
             date: request.body.date
         }
 
