@@ -428,14 +428,20 @@ export async function getOrderDetailsController(request, response) {
             // Paginated query
             orderlist = await OrderModel.find()
                 .sort({ createdAt: -1 })
-                .populate('delivery_address userId deliveryAssignment.riderId products.sellerId')
+                .populate('delivery_address')
+                .populate({ path: 'userId', select: 'name email phone goMarketLocation' })
+                .populate('deliveryAssignment.riderId')
+                .populate('products.sellerId')
                 .skip((page - 1) * limit)
                 .limit(parseInt(limit));
         } else {
             // Fetch all orders (no pagination)
             orderlist = await OrderModel.find()
                 .sort({ createdAt: -1 })
-                .populate('delivery_address userId deliveryAssignment.riderId products.sellerId');
+                .populate('delivery_address')
+                .populate({ path: 'userId', select: 'name email phone goMarketLocation' })
+                .populate('deliveryAssignment.riderId')
+                .populate('products.sellerId');
         }
 
         const total = page && limit ? await OrderModel.countDocuments() : orderlist.length;
@@ -469,14 +475,18 @@ export async function getUserOrderDetailsController(request, response) {
             // Paginated query
             orderlist = await OrderModel.find({ userId: userId })
                 .sort({ createdAt: -1 })
-                .populate('delivery_address userId deliveryAssignment.riderId')
+                .populate('delivery_address')
+                .populate({ path: 'userId', select: 'name email phone goMarketLocation' })
+                .populate('deliveryAssignment.riderId')
                 .skip((page - 1) * limit)
                 .limit(parseInt(limit));
         } else {
             // Fetch all orders (no pagination)
             orderlist = await OrderModel.find({ userId: userId })
                 .sort({ createdAt: -1 })
-                .populate('delivery_address userId deliveryAssignment.riderId');
+                .populate('delivery_address')
+                .populate({ path: 'userId', select: 'name email phone goMarketLocation' })
+                .populate('deliveryAssignment.riderId');
         }
 
         const total = page && limit ? await OrderModel.countDocuments({ userId: userId }) : (orderlist?.length || 0);
@@ -799,7 +809,10 @@ export async function getSellerOrdersController(request, response) {
 
         const orders = await OrderModel.find({ "products.sellerId": request.userId })
             .sort({ createdAt: -1 })
-            .populate('delivery_address userId products.sellerId deliveryAssignment.riderId')
+            .populate('delivery_address')
+            .populate({ path: 'userId', select: 'name email phone goMarketLocation' })
+            .populate('products.sellerId')
+            .populate('deliveryAssignment.riderId')
             .skip(skip)
             .limit(Number(limit));
 
