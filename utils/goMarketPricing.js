@@ -6,24 +6,14 @@ export const isGoMarketOrder = (products = []) => {
     const source = String(product?.source || product?.goMarketSource || "").toLowerCase();
     const brand = String(product?.brand || "").toLowerCase();
     const sellerProfile = product?.sellerId?.storeProfile || product?.sellerProfile || {};
-    const sellerMeta = `${sellerProfile?.marketId || ""} ${sellerProfile?.goMarketOwnerId || ""}`.toLowerCase();
     const hasGoMarketSeller = Boolean(sellerProfile?.marketId || sellerProfile?.goMarketOwnerId);
-    const identityFields = [
-      product?.shopId,
-      product?.restaurantId,
-      product?.marketId,
-      product?.sellerId,
-      product?.goMarketKind,
-      sellerMeta,
-    ]
-      .filter(Boolean)
-      .map((value) => String(value).toLowerCase());
+    const hasGoMarketFields = Boolean(product?.shopId || product?.restaurantId || product?.marketId || product?.goMarketKind);
 
     return (
       source.includes("gomarket") ||
       brand.includes("gomarket") ||
       hasGoMarketSeller ||
-      identityFields.some((value) => value.includes("gomarket") || value.includes("market") || value.includes("restaurant") || value.includes("shop"))
+      hasGoMarketFields
     );
   });
 };
