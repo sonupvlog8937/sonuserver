@@ -32,12 +32,22 @@ const authorizeRole = (...allowedRoles) => {
       }
 
       if (!allowedRoles.includes(user.role)) {
+        console.log('❌ Authorization failed:', {
+          userRole: user.role,
+          allowedRoles: allowedRoles,
+          includes: allowedRoles.includes(user.role)
+        });
         return response.status(403).json({
           message: "Forbidden",
           error: true,
           success: false,
         });
       }
+
+      console.log('✅ Authorization successful:', {
+        userRole: user.role,
+        allowedRoles: allowedRoles
+      });
 
       request.currentUser = { ...(request.currentUser || {}), ...user };
       return next();
