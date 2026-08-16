@@ -102,7 +102,9 @@ app.use(helmet({
 app.get("/", (request, response) => {
   response.json({
     message: "Server is running on port " + process.env.PORT,
-    status: "OK"
+    status: "OK",
+    version: "1.0.1-vice-admin-fix", // Added version
+    lastUpdated: "2026-08-16"
   })
 })
 
