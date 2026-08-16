@@ -53,7 +53,7 @@ userRouter.put('/admin/user-access',auth,authorizeRole('ADMIN'),updateUserAccess
 userRouter.post('/addReview',auth,addReview);
 userRouter.get('/getReviews',getReviews);
 userRouter.get('/getAllReviews',auth,authorizeRole('ADMIN',...ALL_SELLER_ROLES),getAllReviews);
-userRouter.get('/getAllUsers',auth,authorizeRole('ADMIN'),getAllUsers);
+userRouter.get('/getAllUsers',auth,authorizeRole('ADMIN','VICE_ADMIN'),getAllUsers);
 userRouter.delete('/deleteMultiple',auth,authorizeRole('ADMIN'),deleteMultiple);
 userRouter.delete('/deleteUser/:id',auth,authorizeRole('ADMIN'),deleteUser);
 
