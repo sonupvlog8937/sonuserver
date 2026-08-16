@@ -29,9 +29,9 @@ orderRouter.post('/return-request/:id',auth,requestOrderReturnController)
 orderRouter.put('/return-refund-status/:id',auth,authorizeRole('ADMIN','VICE_ADMIN',...ALL_SELLER_ROLES),updateReturnRefundStatusController)
 
 orderRouter.get('/seller/dashboard-stats', auth, authorizeRole(...ALL_SELLER_ROLES), getSellerDashboardStats)
-orderRouter.get('/delivery-riders', auth, authorizeRole('ADMIN',...QUICK_COMMERCE_SELLERS), listDeliveryRidersController)
-orderRouter.put('/assign-rider/:id', auth, authorizeRole('ADMIN',...QUICK_COMMERCE_SELLERS), assignOrderToRiderController)
-orderRouter.put('/broadcast-order/:id', auth, authorizeRole('ADMIN',...QUICK_COMMERCE_SELLERS), broadcastOrderToMarketController)
+orderRouter.get('/delivery-riders', auth, authorizeRole('ADMIN','VICE_ADMIN',...QUICK_COMMERCE_SELLERS), listDeliveryRidersController)
+orderRouter.put('/assign-rider/:id', auth, authorizeRole('ADMIN','VICE_ADMIN',...QUICK_COMMERCE_SELLERS), assignOrderToRiderController)
+orderRouter.put('/broadcast-order/:id', auth, authorizeRole('ADMIN','VICE_ADMIN',...QUICK_COMMERCE_SELLERS), broadcastOrderToMarketController)
 orderRouter.get('/rider/orders', auth, authorizeRole('DELIVERY_RIDER'), getRiderOrdersController)
 orderRouter.get('/rider/stats', auth, authorizeRole('DELIVERY_RIDER'), getRiderStatsController)
 orderRouter.get('/rider/recent-deliveries', auth, authorizeRole('DELIVERY_RIDER'), getRiderRecentDeliveriesController)
@@ -39,6 +39,6 @@ orderRouter.put('/rider/orders/:id/confirm', auth, authorizeRole('DELIVERY_RIDER
 orderRouter.post('/rider/orders/:id/send-otp', auth, authorizeRole('DELIVERY_RIDER'), sendDeliveryOtpController)
 orderRouter.put('/rider/orders/:id/deliver', auth, authorizeRole('DELIVERY_RIDER'), deliverRiderOrderController)
 orderRouter.put('/rider/orders/:id/cancel', auth, authorizeRole('DELIVERY_RIDER'), cancelRiderOrderController)
-orderRouter.post('/admin/rider-payout', auth, authorizeRole('ADMIN'), payRiderWalletController)
+orderRouter.post('/admin/rider-payout', auth, authorizeRole('ADMIN','VICE_ADMIN'), payRiderWalletController)
 
 export default orderRouter;
