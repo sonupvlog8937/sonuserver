@@ -29,8 +29,8 @@ const SELLER_ROLES = [
     'AUTOMOBILE_SELLER'
 ];
 
-// All allowed panel roles (16 types: 13 sellers + ADMIN + USER + DELIVERY_RIDER)
-const ALL_PANEL_ROLES = ['ADMIN', 'USER', 'DELIVERY_RIDER', ...SELLER_ROLES];
+// All allowed panel roles (17 types: 13 sellers + ADMIN + VICE_ADMIN + USER + DELIVERY_RIDER)
+const ALL_PANEL_ROLES = ['ADMIN', 'VICE_ADMIN', 'USER', 'DELIVERY_RIDER', ...SELLER_ROLES];
 
 // Roles allowed for public signup
 const PUBLIC_SIGNUP_SELLER_ROLES = [...SELLER_ROLES, 'DELIVERY_RIDER'];
