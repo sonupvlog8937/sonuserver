@@ -90,9 +90,10 @@ export const findNearbyMarkets = async ({ latitude, longitude, limit = 10 }) => 
     }
 
     // Calculate distance and sort by nearest. Guard against null/invalid haversine results.
+    // Apply 1.35x road factor for accurate distance
     const nearby = marketsWithCoords
       .map((market) => {
-        const dist = geoHaversineKm(latitude, longitude, market.latitude, market.longitude);
+        const dist = geoHaversineKm(latitude, longitude, market.latitude, market.longitude, true);
         if (dist == null || Number.isNaN(dist)) {
           console.warn(`⚠️ Invalid distance for market ${market.name}: ${dist}`);
           return null;
