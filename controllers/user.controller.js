@@ -1946,6 +1946,13 @@ export async function getAllUsers(request, response) {
         const { page, limit } = request.query;
         const userRole = request.currentUser?.role; // Get current user's role
 
+        console.log('🔍 getAllUsers called by:', {
+            userId: request.userId,
+            userRole: userRole,
+            userName: request.currentUser?.name,
+            fullUser: request.currentUser
+        });
+
         // Define filter based on role
         let filter = {};
         
