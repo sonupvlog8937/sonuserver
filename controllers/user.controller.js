@@ -40,7 +40,16 @@ const isSellerRole = (role) => SELLER_ROLES.includes(role);
 
 const normalizePanelRole = (role, fallback = 'SELLER') => {
     const normalized = String(role || fallback).trim().toUpperCase();
-    return ALL_PANEL_ROLES.includes(normalized) ? normalized : fallback;
+    const isValid = ALL_PANEL_ROLES.includes(normalized);
+    console.log('🔍 normalizePanelRole:', { 
+        input: role, 
+        normalized, 
+        isValid, 
+        fallback,
+        result: isValid ? normalized : fallback,
+        availableRoles: ALL_PANEL_ROLES 
+    }); // Debug
+    return isValid ? normalized : fallback;
 };
 const normalizePublicSellerRole = (role) => {
     const normalized = String(role || 'SELLER').trim().toUpperCase();
@@ -1040,6 +1049,8 @@ export async function updateUserAccessByAdminController(request, response) {
     try {
         const { userId, status, role } = request.body;
 
+        console.log('📥 Update user access request:', { userId, status, role }); // Debug
+
         if (!userId) {
             return response.status(400).json({
                 message: "userId is required",
@@ -1050,7 +1061,11 @@ export async function updateUserAccessByAdminController(request, response) {
 
         const payload = {};
         if (status) payload.status = status;
-         if (role) payload.role = normalizePanelRole(role, 'USER');
+        if (role) {
+            const normalizedRole = normalizePanelRole(role, 'USER');
+            console.log('🔄 Role normalization:', { input: role, normalized: normalizedRole }); // Debug
+            payload.role = normalizedRole;
+        }
 
         if (!Object.keys(payload).length) {
             return response.status(400).json({
@@ -1060,7 +1075,19 @@ export async function updateUserAccessByAdminController(request, response) {
             });
         }
 
+        console.log('💾 Updating user with payload:', payload); // Debug
+
         const updatedUser = await UserModel.findByIdAndUpdate(userId, payload, { new: true });
+
+        if (!updatedUser) {
+            return response.status(404).json({
+                message: "User not found",
+                error: true,
+                success: false,
+            });
+        }
+
+        console.log('✅ User updated successfully. New role:', updatedUser.role); // Debug
 
         if (!updatedUser) {
             return response.status(404).json({
@@ -1917,10 +1944,32 @@ export async function approveWalletRequest(request, response) {
 export async function getAllUsers(request, response) {
     try {
         const { page, limit } = request.query;
+        const userRole = request.currentUser?.role; // Get current user's role
 
-        const totalUsers = await UserModel.find();
-        const users      = await UserModel.find().sort({ createdAt: -1 }).skip((page - 1) * limit).limit(parseInt(limit));
-        const total      = await UserModel.countDocuments(users);
+        // Define filter based on role
+        let filter = {};
+        
+        if (userRole === 'VICE_ADMIN') {
+            // VICE_ADMIN can only see USER and SELLER roles (not ADMIN or VICE_ADMIN)
+            filter = {
+                role: { 
+                    $nin: ['ADMIN', 'VICE_ADMIN'] // Exclude ADMIN and VICE_ADMIN
+                }
+            };
+            console.log('🔍 VICE_ADMIN filter applied:', filter);
+        }
+        // ADMIN sees everyone (no filter needed)
+
+        const totalUsers = await UserModel.find(filter);
+        const users      = await UserModel.find(filter).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(parseInt(limit));
+        const total      = await UserModel.countDocuments(filter);
+
+        console.log('📊 getAllUsers response:', { 
+            userRole, 
+            totalCount: total, 
+            usersReturned: users.length,
+            filterApplied: JSON.stringify(filter)
+        });
 
         return response.status(200).json({
             error: false, success: true,
@@ -1932,6 +1981,7 @@ export async function getAllUsers(request, response) {
         });
 
     } catch (error) {
+        console.error('❌ getAllUsers error:', error);
         return response.status(500).json({ message: "Something is wrong", error: true, success: false });
     }
 }
