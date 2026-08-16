@@ -60,7 +60,7 @@ export const coordsNearlyEqual = (lat1, lng1, lat2, lng2, epsilon = 0.0001) => {
   return Math.abs(a.lat - b.lat) <= epsilon && Math.abs(a.lng - b.lng) <= epsilon;
 };
 
-export const haversineKm = (lat1, lng1, lat2, lng2) => {
+export const haversineKm = (lat1, lng1, lat2, lng2, applyRoadFactor = true) => {
   const a = fixSwappedIndianCoords(lat1, lng1);
   const b = fixSwappedIndianCoords(lat2, lng2);
   if (!isValidCoordPair(a.lat, a.lng) || !isValidCoordPair(b.lat, b.lng)) return null;
@@ -75,7 +75,18 @@ export const haversineKm = (lat1, lng1, lat2, lng2) => {
     Math.cos((a.lat * Math.PI) / 180) *
       Math.cos((b.lat * Math.PI) / 180) *
       sinHalfDLng * sinHalfDLng;
-  return R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+  
+  const straightLineDistance = R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+  
+  // Apply road factor to approximate actual driving distance
+  // Urban areas typically have 1.3x to 1.4x factor due to roads not being straight
+  // For Indian cities, we use 1.35x as a balanced multiplier
+  if (applyRoadFactor) {
+    const ROAD_FACTOR = 1.35; // Approximate road distance factor for urban India
+    return straightLineDistance * ROAD_FACTOR;
+  }
+  
+  return straightLineDistance;
 };
 
 export const formatDistanceKm = (distanceKm) => {
