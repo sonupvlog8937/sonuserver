@@ -259,7 +259,8 @@ const mapGroceryOutlet = (shop, userId = null, baseUrl = "", userLat = null, use
   const shopLat = outletCoords?.lat ?? null;
   const shopLng = outletCoords?.lng ?? null;
 
-  const distanceKm = haversineKm(userLat, userLng, shopLat, shopLng);
+  // Apply 1.35x road factor for accurate distance
+  const distanceKm = haversineKm(userLat, userLng, shopLat, shopLng, true);
   const distanceDisplay = formatDistanceKm(distanceKm);
   const estimatedTime = distanceKm == null
     ? null  // no distance = no time shown
@@ -304,7 +305,8 @@ const mapRestaurantOutlet = (r, userId = null, baseUrl = "", userLat = null, use
   const restLat = outletCoords?.lat ?? null;
   const restLng = outletCoords?.lng ?? null;
 
-  const distanceKm = haversineKm(userLat, userLng, restLat, restLng);
+  // Apply 1.35x road factor for accurate distance
+  const distanceKm = haversineKm(userLat, userLng, restLat, restLng, true);
   const distanceDisplay = formatDistanceKm(distanceKm);
   const estimatedTime = distanceKm == null
     ? null  // no distance = no time shown
