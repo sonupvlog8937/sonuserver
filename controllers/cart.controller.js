@@ -1,5 +1,10 @@
 import CartProductModel from "../models/cartProduct.modal.js";
 import ProductModel from "../models/product.modal.js";
+import GroceryProduct from "../models/groceryProduct.model.js";
+import RestaurantItem from "../models/restaurantItem.model.js";
+import GroceryShop from "../models/groceryShop.model.js";
+import Restaurant from "../models/restaurant.model.js";
+import { resolveCoordPair } from "../utils/geoCoords.js";
 
 const getImageFromSelectedColor = (
   product = {},
@@ -48,6 +53,11 @@ export const addToCartItemController = async (request, response) => {
       colorCode,
       selectedOptions,
       source,
+      shopId: bodyShopId,
+      restaurantId: bodyRestaurantId,
+      marketId,
+      goMarketKind,
+      sellerId,
     } = request.body;
     if (!productId) {
       return response.status(402).json({
@@ -73,19 +83,39 @@ export const addToCartItemController = async (request, response) => {
       });
     }
 
-    const productDetails = await ProductModel.findById(productId)
-      .select("images colorOptions seller")
-      .populate({
-        path: 'seller',
-        select: 'storeProfile',
-        populate: {
-          path: 'storeProfile.marketId',
-          select: 'latitude longitude'
-        }
-      });
-    
-    const selectedImage =
-      image || getImageFromSelectedColor(productDetails, color, colorCode);
+    const normalizedSource = String(source || "").toLowerCase();
+    const isGoMarketSource =
+      normalizedSource.includes("gomarket") ||
+      normalizedSource.includes("go-market") ||
+      Boolean(bodyShopId || bodyRestaurantId || goMarketKind);
+
+    const productDetails = isGoMarketSource
+      ? null
+      : await ProductModel.findById(productId)
+          .select("images colorOptions seller")
+          .populate({
+            path: "seller",
+            select: "storeProfile",
+            populate: {
+              path: "storeProfile.marketId",
+              select: "latitude longitude",
+            },
+          });
+
+    let selectedImage = image || getImageFromSelectedColor(productDetails, color, colorCode);
+
+    if (!selectedImage && isGoMarketSource) {
+      const [groceryProduct, restaurantProduct] = await Promise.all([
+        GroceryProduct.findById(productId).select("images image").lean(),
+        RestaurantItem.findById(productId).select("images image").lean(),
+      ]);
+      const goMarketProduct = groceryProduct || restaurantProduct;
+      selectedImage =
+        goMarketProduct?.images?.[0] ||
+        goMarketProduct?.image ||
+        image ||
+        "";
+    }
 
     if (!selectedImage) {
       return response.status(400).json({
@@ -95,24 +125,63 @@ export const addToCartItemController = async (request, response) => {
       });
     }
 
-    // Get shop/restaurant coordinates from seller's storeProfile
-    let shopLatitude, shopLongitude, restaurantLatitude, restaurantLongitude, shopId, restaurantId;
-    
+    // Resolve shop/restaurant coordinates for Go Market and seller products
+    let shopId = bodyShopId || "";
+    let restaurantId = bodyRestaurantId || "";
+    let shopLatitude;
+    let shopLongitude;
+    let restaurantLatitude;
+    let restaurantLongitude;
+
+    if (bodyShopId) {
+      const shop = await GroceryShop.findById(bodyShopId)
+        .populate("marketId", "latitude longitude")
+        .lean();
+      if (shop) {
+        shopId = String(shop._id);
+        const coords = resolveCoordPair(
+          shop.latitude,
+          shop.longitude,
+          shop.marketId?.latitude,
+          shop.marketId?.longitude,
+        );
+        if (coords?.lat != null && coords?.lng != null) {
+          shopLatitude = coords.lat;
+          shopLongitude = coords.lng;
+        }
+      }
+    }
+
+    if (bodyRestaurantId) {
+      const restaurant = await Restaurant.findById(bodyRestaurantId)
+        .populate("marketId", "latitude longitude")
+        .lean();
+      if (restaurant) {
+        restaurantId = String(restaurant._id);
+        const coords = resolveCoordPair(
+          restaurant.latitude,
+          restaurant.longitude,
+          restaurant.marketId?.latitude,
+          restaurant.marketId?.longitude,
+        );
+        if (coords?.lat != null && coords?.lng != null) {
+          restaurantLatitude = coords.lat;
+          restaurantLongitude = coords.lng;
+        }
+      }
+    }
+
     if (productDetails?.seller?.storeProfile) {
       const storeProfile = productDetails.seller.storeProfile;
-      
-      // Check if it's a Go Market shop
-      if (storeProfile.marketId) {
-        shopId = productDetails.seller._id;
+
+      if (storeProfile.marketId && !shopLatitude) {
+        shopId = shopId || String(productDetails.seller._id);
         shopLatitude = storeProfile.marketId.latitude;
         shopLongitude = storeProfile.marketId.longitude;
-        console.log("📍 Shop coordinates added to cart:", { shopLatitude, shopLongitude });
       }
-      
-      // Check if it's a restaurant (you can add restaurant-specific logic here)
-      // For now, using same coordinates
-      if (storeProfile.marketId && source?.toLowerCase().includes('restaurant')) {
-        restaurantId = productDetails.seller._id;
+
+      if (storeProfile.marketId && normalizedSource.includes("restaurant") && !restaurantLatitude) {
+        restaurantId = restaurantId || String(productDetails.seller._id);
         restaurantLatitude = storeProfile.marketId.latitude;
         restaurantLongitude = storeProfile.marketId.longitude;
       }
@@ -137,7 +206,7 @@ export const addToCartItemController = async (request, response) => {
       color: color,
       colorCode: colorCode,
       selectedOptions: selectedOptions || {},
-      source: source || "",
+      source: source || (isGoMarketSource ? "goMarket" : ""),
       shopId: shopId || "",
       shopLatitude: shopLatitude,
       shopLongitude: shopLongitude,
