@@ -351,6 +351,11 @@ export const getMarketDetail = async (req, res) => {
 
 export const getGroceryShopDetail = async (req, res) => {
   try {
+    // Set cache-control headers to prevent client-side caching
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    
     if (!isObjectId(req.params.id)) return sendError(res, "Invalid shop id", 400);
     const shopDoc = await GroceryShop.findById(req.params.id).populate("marketId ownerId").lean();
     if (!shopDoc) return sendError(res, "Grocery shop not found", 404);
@@ -361,14 +366,21 @@ export const getGroceryShopDetail = async (req, res) => {
       ...shopRaw,
       shopBanner: shopRaw.shopBanner?.trim() ? resolveMediaUrl(shopRaw.shopBanner, baseUrl) : GROCERY_BANNER_FALLBACK,
       shopLogo: shopRaw.shopLogo?.trim() ? resolveMediaUrl(shopRaw.shopLogo, baseUrl) : LOGO_FALLBACK,
+      _requestId: `shop-${req.params.id}-${Date.now()}`, // Unique identifier for this request
+      _fetchedAt: new Date().toISOString(),
     };
     const products = await GroceryProduct.find({ shopId: req.params.id }).lean();
-    ok(res, { data: { shop, products } });
+    ok(res, { data: { shop, products }, _requestTimestamp: Date.now() });
   } catch (error) { sendError(res, error); }
 };
 
 export const getRestaurantDetail = async (req, res) => {
   try {
+    // Set cache-control headers to prevent client-side caching
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    
     if (!isObjectId(req.params.id)) return sendError(res, "Invalid restaurant id", 400);
     const restaurantDoc = await Restaurant.findById(req.params.id).populate("marketId ownerId").lean();
     if (!restaurantDoc) return sendError(res, "Restaurant not found", 404);
@@ -379,6 +391,8 @@ export const getRestaurantDetail = async (req, res) => {
       ...restaurantRaw,
       restaurantBanner: restaurantRaw.restaurantBanner?.trim() ? resolveMediaUrl(restaurantRaw.restaurantBanner, baseUrl) : RESTAURANT_BANNER_FALLBACK,
       restaurantLogo: restaurantRaw.restaurantLogo?.trim() ? resolveMediaUrl(restaurantRaw.restaurantLogo, baseUrl) : LOGO_FALLBACK,
+      _requestId: `restaurant-${req.params.id}-${Date.now()}`, // Unique identifier for this request
+      _fetchedAt: new Date().toISOString(),
     };
     const [menus, items] = await Promise.all([RestaurantMenu.find({ restaurantId: req.params.id }).lean(), RestaurantItem.find({ restaurantId: req.params.id }).lean()]);
     
@@ -399,7 +413,7 @@ export const getRestaurantDetail = async (req, res) => {
       }
     }
     
-    ok(res, { data: { restaurant, menus, items } });
+    ok(res, { data: { restaurant, menus, items }, _requestTimestamp: Date.now() });
   } catch (error) { sendError(res, error); }
 };
 
