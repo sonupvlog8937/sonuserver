@@ -389,6 +389,11 @@ export const marketShopSearchSuggestions = async (req, res) => {
 
 export const listMarketOutlets = async (req, res) => {
   try {
+    // Set cache-control headers to prevent client-side caching
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    
     const { marketId } = req.params;
     if (!isObjectId(marketId)) return sendError(res, "Invalid market id", 400);
 
