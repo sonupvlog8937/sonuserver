@@ -16,6 +16,7 @@ import { calculateGoMarketFees, isGoMarketOrder } from "../utils/goMarketPricing
 import AppSettings from "../models/appSettings.model.js";
 import { haversineKm, resolveCoordPair, formatDistanceKm } from "../utils/geoCoords.js";
 import { sendFast2SMS } from "./user.controller.js";
+import { normalizeOrderStatus } from "../utils/orderStatus.js";
 
 
 const isRazorpaySignaturePayload = (body = {}) =>
@@ -491,9 +492,17 @@ export async function getUserOrderDetailsController(request, response) {
 
         const total = page && limit ? await OrderModel.countDocuments({ userId: userId }) : (orderlist?.length || 0);
 
+        const normalizedOrders = (orderlist || []).map((order) => {
+            const plainOrder = order?.toObject ? order.toObject() : order;
+            return {
+                ...plainOrder,
+                order_status: normalizeOrderStatus(plainOrder?.order_status),
+            };
+        });
+
         return response.json({
             message: "order list",
-            data: orderlist,
+            data: normalizedOrders,
             error: false,
             success: true,
             total: total,
@@ -666,10 +675,12 @@ export const updateOrderStatusController = async (request, response) => {
             });
         }
 
+        const normalizedStatus = normalizeOrderStatus(order_status);
+
         const updateOrder = await OrderModel.findByIdAndUpdate(
             id,
             {
-                order_status: order_status,
+                order_status: normalizedStatus,
             },
             { new: true }
         );
@@ -1681,7 +1692,7 @@ export const confirmRiderOrderController = async (request, response) => {
                     "deliveryAssignment.deliveryEarning": earning.deliveryEarning,
                     "deliveryAssignment.pickupFee": earning.pickupFee,
                     "deliveryAssignment.earningAmount": earning.total,
-                    order_status: "out_for_delivery",
+                    order_status: "out for delivery",
                 },
             },
             { new: true }
@@ -2017,12 +2028,14 @@ export const cancelUserOrderController = async (request, response) => {
             });
         }
 
+        const currentStatus = normalizeOrderStatus(order.order_status);
+
         // Only allow cancellation if order status is "pending"
-        if (order.order_status !== "pending") {
+        if (currentStatus !== "pending") {
             return response.status(400).json({
                 success: false,
                 error: true,
-                message: `Cannot cancel order. Order is already ${order.order_status}`
+                message: `Cannot cancel order. Order is already ${currentStatus}`
             });
         }
 
