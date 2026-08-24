@@ -1700,64 +1700,175 @@ export const confirmRiderOrderController = async (request, response) => {
 export const sendDeliveryOtpController = async (request, response) => {
     try {
         const order = await OrderModel.findOne({ _id: request.params.id, "deliveryAssignment.riderId": request.userId })
-            .populate("userId", "name email")
+            .populate("userId", "name email phone")
             .populate("delivery_address", "mobile");
         
-        console.log('🔍 [Delivery OTP] Order found:', {
-            orderId: order?._id,
-            hasDeliveryAddress: !!order?.delivery_address,
-            deliveryAddressMobile: order?.delivery_address?.mobile,
-            deliveryAddressData: order?.delivery_address
+        console.log('🔍 [Delivery OTP] Order lookup:', {
+            orderId: request.params.id,
+            riderId: request.userId,
+            orderFound: !!order
         });
         
-        if (!order) return response.status(404).json({ success: false, error: true, message: "Assigned order not found" });
-        
-        const otp = String(Math.floor(100000 + Math.random() * 900000));
-        order.deliveryAssignment.deliveryOtp = otp;
-        order.deliveryAssignment.deliveryOtpExpires = new Date(Date.now() + 10 * 60 * 1000);
-        order.deliveryAssignment.status = "otp_sent";
-        await order.save();
-        
-        // Send OTP via SMS to customer's mobile number (from delivery address)
-        const customerMobile = order.delivery_address?.mobile;
-        
-        console.log('📱 [Delivery OTP] Customer mobile:', customerMobile);
-        
-        if (!customerMobile) {
-            console.error('❌ [Delivery OTP] No mobile number found');
-            return response.status(400).json({ 
+        if (!order) {
+            console.error('❌ [Delivery OTP] Order not found or not assigned to this rider');
+            return response.status(404).json({ 
                 success: false, 
                 error: true, 
-                message: "Customer mobile number not found in delivery address" 
+                message: "Assigned order not found. Please refresh and try again." 
             });
         }
         
-        try {
-            console.log(`📤 [Delivery OTP] Sending OTP ${otp} to ${customerMobile}`);
-            await sendFast2SMS(customerMobile, otp);
-            console.log('✅ [Delivery OTP] SMS sent successfully');
+        console.log('🔍 [Delivery OTP] Order details:', {
+            orderId: order._id,
+            deliveryStatus: order.deliveryAssignment?.status,
+            hasDeliveryAddress: !!order.delivery_address,
+            deliveryAddressMobile: order.delivery_address?.mobile,
+            userPhone: order.userId?.phone,
+            userEmail: order.userId?.email,
+            deliveryAddressId: order.delivery_address?._id
+        });
+        
+        // Get customer mobile from delivery address or user profile
+        let customerMobile = order.delivery_address?.mobile;
+        
+        // Fallback to user's phone if delivery address mobile is not available
+        if (!customerMobile && order.userId?.phone) {
+            customerMobile = order.userId.phone;
+            console.log('⚠️ [Delivery OTP] Using user phone as fallback:', customerMobile);
+        }
+        
+        // Get customer email for backup delivery
+        const customerEmail = order.userId?.email;
+        const customerName = order.userId?.name || 'Customer';
+        
+        // Generate 6-digit OTP
+        const otp = String(Math.floor(100000 + Math.random() * 900000));
+        
+        // Save OTP to order before sending
+        order.deliveryAssignment.deliveryOtp = otp;
+        order.deliveryAssignment.deliveryOtpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+        order.deliveryAssignment.status = "otp_sent";
+        
+        await order.save();
+        console.log('💾 [Delivery OTP] OTP saved to database:', otp);
+        
+        let smsSuccess = false;
+        let emailSuccess = false;
+        let errorMessages = [];
+        
+        // Try sending SMS first if mobile number exists
+        if (customerMobile) {
+            try {
+                console.log(`📤 [Delivery OTP] Attempting to send OTP ${otp} via SMS to ${customerMobile}`);
+                
+                const smsSent = await sendFast2SMS(customerMobile, otp);
+                
+                if (smsSent) {
+                    smsSuccess = true;
+                    console.log('✅ [Delivery OTP] SMS sent successfully');
+                } else {
+                    throw new Error('SMS sending returned false');
+                }
+                
+            } catch (smsError) {
+                console.error('❌ [Delivery OTP] SMS sending failed:', {
+                    error: smsError.message,
+                    mobile: customerMobile
+                });
+                errorMessages.push(`SMS failed: ${smsError.message}`);
+            }
+        } else {
+            console.log('⚠️ [Delivery OTP] No mobile number available, skipping SMS');
+            errorMessages.push('No mobile number found');
+        }
+        
+        // Try sending email as backup or primary method
+        if (customerEmail && !smsSuccess) {
+            try {
+                console.log(`📤 [Delivery OTP] Attempting to send OTP ${otp} via Email to ${customerEmail}`);
+                
+                const emailHtml = getOtpEmailHtml({
+                    customerName,
+                    otp,
+                    orderId: String(order._id).slice(-8).toUpperCase(),
+                    trackingUrl: `${process.env.FRONTEND_URL || 'https://zeedaddy.in'}/track-order/${order._id}`,
+                    supportUrl: `${process.env.FRONTEND_URL || 'https://zeedaddy.in'}/support`,
+                    customerEmail
+                });
+                
+                const emailSent = await sendEmailFun({
+                    sendTo: customerEmail,
+                    subject: `🚚 Your Delivery OTP - Order #${String(order._id).slice(-8).toUpperCase()} | Zeedaddy`,
+                    text: `Your delivery OTP is: ${otp}. Valid for 10 minutes. Please share this OTP with your delivery partner to confirm delivery. - Zeedaddy`,
+                    html: emailHtml
+                });
+                
+                if (emailSent) {
+                    emailSuccess = true;
+                    console.log('✅ [Delivery OTP] Email sent successfully');
+                } else {
+                    throw new Error('Email sending returned false');
+                }
+                
+            } catch (emailError) {
+                console.error('❌ [Delivery OTP] Email sending failed:', {
+                    error: emailError.message,
+                    email: customerEmail
+                });
+                errorMessages.push(`Email failed: ${emailError.message}`);
+            }
+        }
+        
+        // Determine response based on success
+        if (smsSuccess || emailSuccess) {
+            let successMessage = 'Delivery OTP sent successfully';
+            
+            if (smsSuccess && emailSuccess) {
+                successMessage = `OTP sent via SMS (ending ...${String(customerMobile).slice(-4)}) and Email`;
+            } else if (smsSuccess) {
+                successMessage = `OTP sent via SMS to number ending with ${String(customerMobile).slice(-4)}`;
+            } else if (emailSuccess) {
+                successMessage = `OTP sent via Email to ${customerEmail} (SMS unavailable)`;
+            }
+            
             return response.json({ 
                 success: true, 
                 error: false, 
-                message: `Delivery OTP sent to customer mobile ${customerMobile}` 
+                message: successMessage,
+                deliveryMethod: smsSuccess ? 'SMS' : 'EMAIL'
             });
-        } catch (smsError) {
-            console.error('❌ [Delivery OTP] SMS sending error:', smsError);
-            // Rollback OTP status if SMS fails
+            
+        } else {
+            // Both SMS and Email failed - rollback
+            console.error('❌ [Delivery OTP] All delivery methods failed:', errorMessages);
+            
             order.deliveryAssignment.deliveryOtp = "";
             order.deliveryAssignment.deliveryOtpExpires = null;
             order.deliveryAssignment.status = "confirmed";
             await order.save();
             
+            console.log('🔄 [Delivery OTP] Rolled back order status to "confirmed"');
+            
             return response.status(500).json({ 
                 success: false, 
                 error: true, 
-                message: "Failed to send OTP via SMS. Please try again." 
+                message: `Failed to send OTP. ${errorMessages.join('; ')}. Please ensure customer has valid contact details or try again later.` 
             });
         }
+        
     } catch (error) {
-        console.error('❌ [Delivery OTP] Controller error:', error);
-        return response.status(500).json({ success: false, error: true, message: error.message || error });
+        console.error('❌ [Delivery OTP] Controller error:', {
+            message: error.message,
+            stack: error.stack,
+            orderId: request.params.id,
+            riderId: request.userId
+        });
+        
+        return response.status(500).json({ 
+            success: false, 
+            error: true, 
+            message: `Server error: ${error.message || 'Unknown error occurred'}` 
+        });
     }
 };
 
@@ -1885,5 +1996,81 @@ export const payRiderWalletController = async (request, response) => {
         return response.json({ success: true, error: false, message: "Rider payout recorded", data: { riderBalance: rider.wallet.availableBalance, adminBalance: admin.wallet.availableBalance } });
     } catch (error) {
         return response.status(500).json({ success: false, error: true, message: error.message || error });
+    }
+};
+
+
+// User Cancel Order Controller
+export const cancelUserOrderController = async (request, response) => {
+    try {
+        const orderId = request.params.id;
+        const userId = request.userId;
+
+        // Find order and verify it belongs to the user
+        const order = await OrderModel.findOne({ _id: orderId, userId: userId });
+
+        if (!order) {
+            return response.status(404).json({
+                success: false,
+                error: true,
+                message: "Order not found or you don't have permission to cancel this order"
+            });
+        }
+
+        // Only allow cancellation if order status is "pending"
+        if (order.order_status !== "pending") {
+            return response.status(400).json({
+                success: false,
+                error: true,
+                message: `Cannot cancel order. Order is already ${order.order_status}`
+            });
+        }
+
+        // Update order status to cancelled
+        order.order_status = "cancelled";
+        await order.save();
+
+        // Restore product inventory for cancelled order
+        if (order.products && order.products.length > 0) {
+            for (const item of order.products) {
+                if (item.productId) {
+                    // Check if it's a regular product
+                    const product = await ProductModel.findById(item.productId);
+                    if (product) {
+                        product.countInStock = (product.countInStock || 0) + (item.quantity || 0);
+                        await product.save();
+                        continue;
+                    }
+
+                    // Check if it's a grocery product
+                    const groceryProduct = await GroceryProduct.findById(item.productId);
+                    if (groceryProduct) {
+                        groceryProduct.stock = (groceryProduct.stock || 0) + (item.quantity || 0);
+                        await groceryProduct.save();
+                        continue;
+                    }
+
+                    // Check if it's a restaurant item
+                    const restaurantItem = await RestaurantItem.findById(item.productId);
+                    if (restaurantItem) {
+                        restaurantItem.stock = (restaurantItem.stock || 0) + (item.quantity || 0);
+                        await restaurantItem.save();
+                    }
+                }
+            }
+        }
+
+        return response.json({
+            success: true,
+            error: false,
+            message: "Order cancelled successfully",
+            data: order
+        });
+    } catch (error) {
+        return response.status(500).json({
+            success: false,
+            error: true,
+            message: error.message || error
+        });
     }
 };
