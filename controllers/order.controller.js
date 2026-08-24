@@ -2018,9 +2018,9 @@ export const cancelUserOrderController = async (request, response) => {
         const userId = request.userId;
 
         // Find order and verify it belongs to the user
-        const order = await OrderModel.findOne({ _id: orderId, userId: userId });
+        const order = await OrderModel.findById(orderId);
 
-        if (!order) {
+        if (!order || String(order.userId) !== String(userId)) {
             return response.status(404).json({
                 success: false,
                 error: true,
