@@ -9,6 +9,7 @@ const DEFAULTS = {
   goMarketDeliveryFeePerKm: 0,
   goMarketRiderFeePerKm: 0,
   goMarketRiderPickupFee: 0,
+  firstOrderFreeDelivery: true,
   collections: []
 };
 
@@ -40,6 +41,11 @@ export const updateCommerceSettings = async (req, res) => {
         patch[key] = Math.max(0, Number(req.body[key]) || 0);
       }
     });
+
+    // Update first order free delivery setting
+    if (req.body.firstOrderFreeDelivery !== undefined) {
+      patch.firstOrderFreeDelivery = Boolean(req.body.firstOrderFreeDelivery);
+    }
 
     // Update collections
     if (Array.isArray(req.body.collections)) {
