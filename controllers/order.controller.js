@@ -303,6 +303,10 @@ export const createOrderController = async (request, response) => {
         let settings = await AppSettings.findOne({ key: "commerce" }).lean();
         settings = settings || {};
 
+        // Check if first order free delivery is enabled in admin settings
+        const firstOrderFreeDeliveryEnabled = settings.firstOrderFreeDelivery !== false;
+        const applyFirstOrderDiscount = isFirstOrder && firstOrderFreeDeliveryEnabled;
+
         let shippingFee = 0;
         let deliveryFee = 0;
         let totalAmt = request.body.totalAmt;
@@ -323,25 +327,27 @@ export const createOrderController = async (request, response) => {
                 settings,
                 subtotal: orderSubtotal,
                 distanceKm: goMarketDistance.distanceKm,
-                isFirstOrder,
+                isFirstOrder: applyFirstOrderDiscount,
             });
-            shippingFee = feeResult.shippingFee + (isFirstOrder ? 0 : normalShippingFee);
-            deliveryFee = feeResult.deliveryFee + (isFirstOrder ? 0 : normalDeliveryFee);
+            shippingFee = feeResult.shippingFee + (applyFirstOrderDiscount ? 0 : normalShippingFee);
+            deliveryFee = feeResult.deliveryFee + (applyFirstOrderDiscount ? 0 : normalDeliveryFee);
             totalAmt = Math.max(orderSubtotal - discount, 0) + shippingFee + deliveryFee;
         } else {
             console.log("🔍 First Order Check:", {
                 userId: request.body.userId,
                 existingOrders,
                 isFirstOrder,
+                firstOrderFreeDeliveryEnabled,
+                applyFirstOrderDiscount,
                 requestShipping: request.body.shippingFee,
                 requestDelivery: request.body.deliveryFee,
                 requestTotal: request.body.totalAmt
             });
 
-            shippingFee = isFirstOrder ? 0 : (request.body.shippingFee || 0);
-            deliveryFee = isFirstOrder ? 0 : (request.body.deliveryFee || 0);
+            shippingFee = applyFirstOrderDiscount ? 0 : (request.body.shippingFee || 0);
+            deliveryFee = applyFirstOrderDiscount ? 0 : (request.body.deliveryFee || 0);
 
-            if (isFirstOrder && (request.body.shippingFee || request.body.deliveryFee)) {
+            if (applyFirstOrderDiscount && (request.body.shippingFee || request.body.deliveryFee)) {
                 totalAmt = totalAmt - (request.body.shippingFee || 0) - (request.body.deliveryFee || 0);
             }
         }
@@ -351,7 +357,7 @@ export const createOrderController = async (request, response) => {
             shippingFee,
             deliveryFee,
             totalAmt,
-            adjusted: isFirstOrder
+            firstOrderDiscount: applyFirstOrderDiscount
         });
 
         let order = new OrderModel({
@@ -609,13 +615,19 @@ export const captureOrderPaypalController = async (request, response) => {
         const existingOrders = await OrderModel.countDocuments({ userId: request.body.userId });
         const isFirstOrder = existingOrders === 0;
 
+        // Get admin settings for first order free delivery
+        let settings = await AppSettings.findOne({ key: "commerce" }).lean();
+        settings = settings || {};
+        const firstOrderFreeDeliveryEnabled = settings.firstOrderFreeDelivery !== false;
+        const applyFirstOrderDiscount = isFirstOrder && firstOrderFreeDeliveryEnabled;
+
         // Recalculate shipping and delivery fees for first order
-        const shippingFee = isFirstOrder ? 0 : (request.body.shippingFee || 0);
-        const deliveryFee = isFirstOrder ? 0 : (request.body.deliveryFee || 0);
+        const shippingFee = applyFirstOrderDiscount ? 0 : (request.body.shippingFee || 0);
+        const deliveryFee = applyFirstOrderDiscount ? 0 : (request.body.deliveryFee || 0);
 
         // Recalculate total amount if first order (subtract fees from frontend total)
         let totalAmt = request.body.totalAmount;
-        if (isFirstOrder && (request.body.shippingFee || request.body.deliveryFee)) {
+        if (applyFirstOrderDiscount && (request.body.shippingFee || request.body.deliveryFee)) {
             totalAmt = totalAmt - (request.body.shippingFee || 0) - (request.body.deliveryFee || 0);
         }
 
