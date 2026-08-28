@@ -304,7 +304,7 @@ export const createOrderController = async (request, response) => {
         settings = settings || {};
 
         // Check if first order free delivery is enabled in admin settings
-        const firstOrderFreeDeliveryEnabled = settings.firstOrderFreeDelivery !== false;
+        const firstOrderFreeDeliveryEnabled = settings.firstOrderFreeDelivery === true;
         const applyFirstOrderDiscount = isFirstOrder && firstOrderFreeDeliveryEnabled;
 
         let shippingFee = 0;
@@ -618,7 +618,7 @@ export const captureOrderPaypalController = async (request, response) => {
         // Get admin settings for first order free delivery
         let settings = await AppSettings.findOne({ key: "commerce" }).lean();
         settings = settings || {};
-        const firstOrderFreeDeliveryEnabled = settings.firstOrderFreeDelivery !== false;
+        const firstOrderFreeDeliveryEnabled = settings.firstOrderFreeDelivery === true;
         const applyFirstOrderDiscount = isFirstOrder && firstOrderFreeDeliveryEnabled;
 
         // Recalculate shipping and delivery fees for first order
