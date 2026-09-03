@@ -20,6 +20,7 @@ export const isGoMarketOrder = (products = []) => {
 
 export const calculateGoMarketFees = ({ settings = {}, subtotal = 0, distanceKm = 0, isFirstOrder = false } = {}) => {
   const shippingFee = Number(settings.goMarketShippingFee || 0);
+  const baseDeliveryFee = Number(settings.goMarketBaseDeliveryFee || 0);
   const perKmFee = Number(settings.goMarketDeliveryFeePerKm || 0);
   const threshold = Number(settings.freeShippingAbove || 0);
   const freeByRule = threshold > 0 && Number(subtotal || 0) >= threshold;
@@ -32,7 +33,9 @@ export const calculateGoMarketFees = ({ settings = {}, subtotal = 0, distanceKm 
     };
   }
 
-  const deliveryFee = roundCurrency(Math.max(0, Number(distanceKm || 0)) * perKmFee);
+  // Calculate delivery fee: Base Fee + (Distance × Per KM Rate)
+  const distanceBasedFee = roundCurrency(Math.max(0, Number(distanceKm || 0)) * perKmFee);
+  const deliveryFee = roundCurrency(baseDeliveryFee + distanceBasedFee);
 
   return {
     shippingFee: roundCurrency(shippingFee),
