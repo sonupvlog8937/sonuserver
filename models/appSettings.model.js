@@ -5,6 +5,7 @@ const appSettingsSchema = new mongoose.Schema({
   deliveryFee: { type: Number, default: 0, min: 0 },
   freeShippingAbove: { type: Number, default: 0, min: 0 },
   goMarketShippingFee: { type: Number, default: 0, min: 0 },
+  goMarketBaseDeliveryFee: { type: Number, default: 0, min: 0 },
   goMarketDeliveryFeePerKm: { type: Number, default: 0, min: 0 },
   goMarketRiderFeePerKm: { type: Number, default: 0, min: 0 },
   goMarketRiderPickupFee: { type: Number, default: 0, min: 0 },
