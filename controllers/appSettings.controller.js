@@ -6,6 +6,7 @@ const DEFAULTS = {
   deliveryFee: 0,
   freeShippingAbove: 0,
   goMarketShippingFee: 0,
+  goMarketBaseDeliveryFee: 0,
   goMarketDeliveryFeePerKm: 0,
   goMarketRiderFeePerKm: 0,
   goMarketRiderPickupFee: 0,
@@ -36,7 +37,7 @@ export const updateCommerceSettings = async (req, res) => {
     const patch = {};
 
     // Update fees
-     ["shippingFee", "deliveryFee", "freeShippingAbove", "goMarketShippingFee", "goMarketDeliveryFeePerKm", "goMarketRiderFeePerKm", "goMarketRiderPickupFee"].forEach((key) => {
+     ["shippingFee", "deliveryFee", "freeShippingAbove", "goMarketShippingFee", "goMarketBaseDeliveryFee", "goMarketDeliveryFeePerKm", "goMarketRiderFeePerKm", "goMarketRiderPickupFee"].forEach((key) => {
       if (req.body[key] !== undefined) {
         patch[key] = Math.max(0, Number(req.body[key]) || 0);
       }
