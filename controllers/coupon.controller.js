@@ -43,7 +43,11 @@ const computeDiscount = (coupon, orderAmount) => {
 const publicCouponQuery = (request) => {
   const audience = String(request.query?.audience || "").toLowerCase();
   const query = { isActive: true };
-  const scopes = [{ audience: "global" }];
+  const scopes = [
+    { audience: "global" },
+    // Admin coupons with no shop/restaurant binding should appear on checkout
+    { shopId: null, restaurantId: null },
+  ];
 
   if (audience === "grocery") scopes.push({ audience: "grocery" });
   if (audience === "restaurant") scopes.push({ audience: "restaurant" });
@@ -115,14 +119,13 @@ export const getActiveCouponsController = async (request, response) => {
     const data = coupons.filter(isCouponLive).map((coupon) => ({
       _id: coupon._id,
       code: coupon.code,
-      discount: coupon.value,
-      discountType: coupon.type === "percentage" ? "percentage" : "fixed",
-      minOrder: coupon.minOrderAmount || 0,
-      maxDiscount: coupon.maxDiscountAmount,
-      label: coupon.title || coupon.description,
+      type: coupon.type, // ✅ Use backend field name
+      value: coupon.value, // ✅ Use backend field name
+      minOrderAmount: coupon.minOrderAmount || 0, // ✅ Use backend field name
+      maxDiscountAmount: coupon.maxDiscountAmount, // ✅ Use backend field name
       title: coupon.title,
       description: coupon.description,
-      expiryDate: coupon.expiresAt,
+      expiresAt: coupon.expiresAt,
       isActive: coupon.isActive,
       audience: coupon.audience,
       shopId: coupon.shopId,
@@ -153,9 +156,16 @@ export const validateCouponController = async (request, response) => {
     }
 
     // Check coupon scope - improved logic for all shop types
+    const isUnscopedAdminCoupon =
+      !coupon.shopId &&
+      !coupon.restaurantId &&
+      !(coupon.productIds || []).length &&
+      !(coupon.restaurantItemIds || []).length;
+
     const matchesScope =
       // Global coupon - valid everywhere
       coupon.audience === "global" ||
+      isUnscopedAdminCoupon ||
       
       // Shop-scoped coupons (grocery, fashion, electronics, etc.)
       // Valid if: coupon has shopId AND it matches the cart's shopId
@@ -182,7 +192,7 @@ export const validateCouponController = async (request, response) => {
       return response.status(400).json({ success: false, error: true, message: result.message, discountAmount: 0 });
     }
 
-    // Return coupon data in application-friendly format
+    // Return coupon data with proper backend field names
     return response.status(200).json({ 
       success: true, 
       error: false, 
@@ -191,13 +201,15 @@ export const validateCouponController = async (request, response) => {
       coupon: {
         _id: coupon._id,
         code: coupon.code,
-        discount: result.discountAmount,
-        discountType: coupon.type === "percentage" ? "percentage" : "fixed",
-        minOrder: coupon.minOrderAmount || 0,
-        maxDiscount: coupon.maxDiscountAmount,
-        label: coupon.title || coupon.description,
-        expiryDate: coupon.expiresAt,
+        type: coupon.type, // ✅ Use backend field name
+        value: coupon.value, // ✅ Use backend field name
+        minOrderAmount: coupon.minOrderAmount || 0, // ✅ Use backend field name
+        maxDiscountAmount: coupon.maxDiscountAmount, // ✅ Use backend field name
+        title: coupon.title,
+        description: coupon.description,
+        expiresAt: coupon.expiresAt,
         isActive: coupon.isActive,
+        calculatedDiscount: result.discountAmount, // For convenience
       }
     });
   } catch (error) {
