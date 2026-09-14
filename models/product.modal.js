@@ -18,6 +18,7 @@ const productSchema = mongoose.Schema(
     seller:   { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
     countInStock: { type: Number, required: true },
     rating:       { type: Number, default: 0 },
+    numReviews:   { type: Number, default: 0 },
     isFeatured:   { type: Boolean, default: false },
     discount:     { type: Number, required: true },
     sale:         { type: Number, default: 0 },
