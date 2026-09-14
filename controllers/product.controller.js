@@ -20,6 +20,13 @@ import {
 import { normalizeSpecifications } from "../utils/productSpecs.js";
 import { rankSuggestions } from "../utils/searchSuggest.js";
 import { getProductImageOptions, getBannerImageOptions } from "../utils/imageCompression.js";
+import {
+  applyUserRatingFields,
+  applyUserRatingFieldsList,
+  backfillProductRatingsOnce,
+  recalculateProductRating,
+  setProductRatingCacheInvalidator,
+} from "../services/productRating.service.js";
 
 import { v2 as cloudinary } from "cloudinary";
 import fs from "fs";
@@ -322,6 +329,7 @@ function _cacheGet(id) {
   return e.data;
 }
 function _cacheDel(id) { _productCache.delete(String(id)); }
+setProductRatingCacheInvalidator(_cacheDel);
 
 // filterOptions poore DB se ek baar fetch karo, 10 min cache rakho
 // (filters/search function bar-bar ye fetch karta tha — ab nahi)
@@ -508,7 +516,8 @@ export async function createProduct(request, response) {
       thirdsubCat: request.body.thirdsubCat,
       thirdsubCatId: request.body.thirdsubCatId,
       countInStock: request.body.countInStock,
-      rating: request.body.rating,
+      rating: 0,
+      numReviews: 0,
       isFeatured: request.body.isFeatured,
       discount: request.body.discount,
       productRam: request.body.productRam,
@@ -553,6 +562,7 @@ export async function createProduct(request, response) {
 //get all products
 export async function getAllProducts(request, response) {
   try {
+    backfillProductRatingsOnce();
     const page = parseInt(request.query.page) || 1;
     const limit = parseInt(request.query.limit) || 25;
     const total = await ProductModel.countDocuments();
@@ -564,7 +574,7 @@ export async function getAllProducts(request, response) {
       .lean(); // ✅ FIX: lean() — 2-3x faster, plain JS object return karta hai
     if (!products) return response.status(400).json({ error: true, success: false });
     return response.status(200).json({
-      error: false, success: true, products,
+      error: false, success: true, products: applyUserRatingFieldsList(products),
       total, page, totalPages: Math.ceil(total / limit), totalCount: total,
     });
   } catch (error) {
@@ -591,7 +601,7 @@ export async function getAllProductsByCatId(request, response) {
     return response.status(200).json({
       error: false,
       success: true,
-      products: products,
+      products: applyUserRatingFieldsList(products),
       totalPages: totalPages,
       totalProducts: totalPosts,
       page: page,
@@ -675,7 +685,7 @@ export async function getAllProductsBySubCatId(request, response) {
     return response.status(200).json({
       error: false,
       success: true,
-      products: products,
+      products: applyUserRatingFieldsList(products),
       totalPages: totalPages,
       totalProducts: totalPosts,
       page: page,
@@ -758,7 +768,7 @@ export async function getAllProductsByThirdLavelCatId(request, response) {
     return response.status(200).json({
       error: false,
       success: true,
-      products: products,
+      products: applyUserRatingFieldsList(products),
       totalPages: totalPages,
       totalProducts: totalPosts,
       page: page,
@@ -1077,7 +1087,7 @@ export async function getProductsBySellerPublic(request, response) {
     return response.status(200).json({
       error: false,
       success: true,
-      products,
+      products: applyUserRatingFieldsList(products),
       total,
       page,
       limit,
@@ -1229,7 +1239,7 @@ export async function getAllFeaturedProducts(request, response) {
     return response.status(200).json({
       error: false,
       success: true,
-      products: products,
+      products: applyUserRatingFieldsList(products),
     });
   } catch (error) {
     return response.status(500).json({
@@ -1405,7 +1415,7 @@ export async function getProduct(request, response) {
       return response
         .status(200)
         .set("Cache-Control", "public, max-age=60, stale-while-revalidate=300")
-        .json({ error: false, success: true, product: cached });
+        .json({ error: false, success: true, product: applyUserRatingFields({ ...cached }) });
     }
 
     // Cache miss — DB se fetch, lean() se fast
@@ -1417,6 +1427,7 @@ export async function getProduct(request, response) {
       return response.status(404).json({ message: "The product is not found", error: true, success: false });
     }
 
+    applyUserRatingFields(product);
     _cacheSet(id, product); // save for next request
 
     return response
@@ -1553,7 +1564,6 @@ export async function updateProduct(request, response) {
         thirdsubCat: request.body.thirdsubCat,
         thirdsubCatId: request.body.thirdsubCatId,
         countInStock: request.body.countInStock,
-        rating: request.body.rating,
         isFeatured: request.body.isFeatured,
         discount: request.body.discount,
         productRam: request.body.productRam,
@@ -2074,7 +2084,7 @@ export async function filters(request, response) {
     ]);
 
     return response.status(200).json({
-      error: false, success: true, products, total,
+      error: false, success: true, products: applyUserRatingFieldsList(products), total,
       page: currentPage, totalPages: Math.max(1, Math.ceil(total / perPage)),
       filterOptions,
     });
@@ -2285,7 +2295,7 @@ export async function searchProductController(request, response) {
       const paginatedProducts = scoredProducts.slice((requestedPage-1)*requestedLimit, requestedPage*requestedLimit);
 
       return response.status(200).json({
-        error: false, success: true, products: paginatedProducts, total,
+        error: false, success: true, products: applyUserRatingFieldsList(paginatedProducts), total,
         page: requestedPage, totalPages: Math.max(1, Math.ceil(total/requestedLimit)),
         originalQuery: query, correctedQuery: fbCorrection,
         suggestions: buildSearchSuggestions(scoredProducts, query, fbCorrection),
@@ -2300,7 +2310,7 @@ export async function searchProductController(request, response) {
     const paginatedProducts = scoredProducts.slice((requestedPage-1)*requestedLimit, requestedPage*requestedLimit);
 
     return response.status(200).json({
-      error: false, success: true, products: paginatedProducts, total,
+      error: false, success: true, products: applyUserRatingFieldsList(paginatedProducts), total,
       page: requestedPage, totalPages: Math.max(1, Math.ceil(total/requestedLimit)),
       originalQuery: query, correctedQuery,
       suggestions: buildSearchSuggestions(scoredProducts, query, correctedQuery),
@@ -2462,17 +2472,15 @@ export async function addReview(request, response) {
       productId,
     });
 
-    // Update product's average rating
-    const allReviews = await ReviewModel.find({ productId });
-    const avgRating  = allReviews.reduce((s, r) => s + (Number(r.rating) || 0), 0) / allReviews.length;
-    await ProductModel.findByIdAndUpdate(productId, { rating: parseFloat(avgRating.toFixed(1)) });
-    _cacheDel(productId); // ✅ rating changed — cache clear
+    const stats = await recalculateProductRating(productId);
 
     return response.status(201).json({
       error:   false,
       success: true,
       message: "Review added successfully",
       review:  newReview,
+      rating: stats.rating,
+      numReviews: stats.numReviews,
     });
   } catch (error) {
     return response.status(500).json({ error: true, message: error.message || error });
@@ -2497,15 +2505,22 @@ export async function getProductReviews(request, response) {
     const sortMap = { NEWEST: { createdAt:-1 }, OLDEST: { createdAt:1 }, HIGHEST: { rating:-1 }, LOWEST: { rating:1 } };
     const sortObj = sortMap[sort] || sortMap.NEWEST;
 
-    const matchId = mongoose.Types.ObjectId.isValid(productId)
-      ? new mongoose.Types.ObjectId(productId) : productId;
+    const reviewFilter = {
+      productId: String(productId),
+      $or: [
+        { targetType: "product" },
+        { targetType: { $exists: false } },
+        { targetType: "" },
+        { targetType: null },
+      ],
+    };
 
     // ✅ FIX: 3 kaam ek saath — countDocuments + paginated find + stats aggregation
     const [total, reviews, statsAgg] = await Promise.all([
-      ReviewModel.countDocuments({ productId }),
-      ReviewModel.find({ productId }).sort(sortObj).skip((page-1)*limit).limit(limit).lean(),
+      ReviewModel.countDocuments(reviewFilter),
+      ReviewModel.find(reviewFilter).sort(sortObj).skip((page-1)*limit).limit(limit).lean(),
       ReviewModel.aggregate([
-        { $match: { productId: matchId } },
+        { $match: reviewFilter },
         { $group: {
           _id: null, sum: { $sum: { $toDouble: "$rating" } }, count: { $sum: 1 },
           s1: { $sum: { $cond: [{ $eq: [{ $round:[{$toDouble:"$rating"}] },1] },1,0] } },
@@ -2538,16 +2553,7 @@ export async function deleteReview(request, response) {
       return response.status(404).json({ error: true, message: "Review not found" });
     }
 
-    // Recalculate product rating after deletion
-    const allReviews = await ReviewModel.find({ productId: deleted.productId });
-    const avgRating  = allReviews.length
-      ? allReviews.reduce((s, r) => s + (Number(r.rating) || 0), 0) / allReviews.length
-      : 0;
-    await ProductModel.findByIdAndUpdate(deleted.productId, {
-      rating: parseFloat(avgRating.toFixed(1)),
-    });
-
-    _cacheDel(String(deleted.productId)); // ✅ rating changed — cache clear
+    await recalculateProductRating(deleted.productId);
     return response.status(200).json({ error: false, success: true, message: "Review deleted" });
   } catch (error) {
     return response.status(500).json({ error: true, message: error.message || error });
