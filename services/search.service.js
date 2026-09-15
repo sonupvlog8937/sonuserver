@@ -485,7 +485,7 @@ export const executeSearch = async ({
  * Fast autocomplete suggestions (debounce-friendly).
  * @param {object} options
  */
-export const executeSuggestions = async ({ query = "", limit = 10 } = {}) => {
+export const executeSuggestions = async ({ query = "", limit = 10, scope = "all" } = {}) => {
   try {
     const cleanQuery = sanitizeSearchQuery(query);
     if (!cleanQuery || cleanQuery.length < 1) {
@@ -493,7 +493,7 @@ export const executeSuggestions = async ({ query = "", limit = 10 } = {}) => {
     }
 
     // Temporarily disable cache for debugging
-    // const cacheKey = buildCacheKey("suggestions", cleanQuery, limit);
+    // const cacheKey = buildCacheKey("suggestions", cleanQuery, limit, scope);
     // const cached = cacheGet(cacheKey);
     // if (cached) return cached;
 
@@ -502,27 +502,54 @@ export const executeSuggestions = async ({ query = "", limit = 10 } = {}) => {
     const groceryQuery = buildGroceryQuery(expandedTerms.slice(0, 5));
     const restaurantQuery = buildRestaurantItemQuery(expandedTerms.slice(0, 5));
 
-    const [products, groceryProducts, restaurantItems, topSearches] = await Promise.all([
-      Object.keys(productQuery).length
-        ? ProductModel.find(productQuery)
-            .select("name brand images price discount catName subCat rating sale isFeatured title searchKeywords")
-            .limit(30)
-            .lean()
-        : [],
-      Object.keys(groceryQuery).length
-        ? GroceryProductModel.find(groceryQuery)
-            .select("name title description images image price discountPrice stock isFeatured soldCount shopId")
-            .limit(20)
-            .lean()
-        : [],
-      Object.keys(restaurantQuery).length
-        ? RestaurantItemModel.find(restaurantQuery)
-            .select("itemName title description images image price discountPrice isAvailable isFeatured soldCount restaurantId")
-            .limit(20)
-            .lean()
-        : [],
-      topSearchRepository.getTop(10),
-    ]);
+    // Only fetch products based on scope
+    const searchPromises = [];
+    
+    // Regular products (always included unless scope is grocery/restaurant only)
+    if (scope === "all" || scope === "products") {
+      searchPromises.push(
+        Object.keys(productQuery).length
+          ? ProductModel.find(productQuery)
+              .select("name brand images price discount catName subCat rating sale isFeatured title searchKeywords")
+              .limit(30)
+              .lean()
+          : []
+      );
+    } else {
+      searchPromises.push(Promise.resolve([]));
+    }
+
+    // Grocery products (only if scope includes grocery)
+    if (scope === "grocery" || scope === "gomarket") {
+      searchPromises.push(
+        Object.keys(groceryQuery).length
+          ? GroceryProductModel.find(groceryQuery)
+              .select("name title description images image price discountPrice stock isFeatured soldCount shopId")
+              .limit(20)
+              .lean()
+          : []
+      );
+    } else {
+      searchPromises.push(Promise.resolve([]));
+    }
+
+    // Restaurant products (only if scope includes restaurant)
+    if (scope === "restaurant" || scope === "gomarket") {
+      searchPromises.push(
+        Object.keys(restaurantQuery).length
+          ? RestaurantItemModel.find(restaurantQuery)
+              .select("itemName title description images image price discountPrice isAvailable isFeatured soldCount restaurantId")
+              .limit(20)
+              .lean()
+          : []
+      );
+    } else {
+      searchPromises.push(Promise.resolve([]));
+    }
+
+    searchPromises.push(topSearchRepository.getTop(10));
+
+    const [products, groceryProducts, restaurantItems, topSearches] = await Promise.all(searchPromises);
 
     // Get shop and restaurant names for grocery and restaurant items
     const shopIds = [...new Set(groceryProducts.map((g) => String(g.shopId)).filter(Boolean))];
