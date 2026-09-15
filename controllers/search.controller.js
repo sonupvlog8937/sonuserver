@@ -83,7 +83,7 @@ export async function searchController(req, res) {
  */
 export async function suggestionsController(req, res) {
   try {
-    const { q, limit } = req.suggestionParams;
+    const { q, limit, scope } = req.suggestionParams;
 
     if (!q) {
       const defaults = await getSearchDefaults(req.userId || null);
@@ -106,7 +106,7 @@ export async function suggestionsController(req, res) {
       });
     }
 
-    const result = await executeSuggestions({ query: q, limit });
+    const result = await executeSuggestions({ query: q, limit, scope });
 
     let recentSearches = [];
     if (req.userId) {
