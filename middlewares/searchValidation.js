@@ -39,7 +39,8 @@ export const validateSearchQuery = (req, res, next) => {
 export const validateSuggestionsQuery = (req, res, next) => {
   const q = sanitizeSearchQuery(req.query.q || req.query.query || "");
   const limit = Math.min(20, Math.max(1, parseInt(req.query.limit, 10) || 10));
-  req.suggestionParams = { q, limit };
+  const scope = req.query.scope || "all"; // all, products, grocery, restaurant, gomarket
+  req.suggestionParams = { q, limit, scope };
   next();
 };
 
