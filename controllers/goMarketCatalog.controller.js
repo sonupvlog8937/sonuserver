@@ -887,11 +887,36 @@ export const listRestaurantItemsCatalog = async (req, res) => {
       restaurantBanner: restaurant.restaurantBanner?.trim() ? resolveMediaUrl(restaurant.restaurantBanner, baseUrl) : RESTAURANT_BANNER_FALLBACK,
       restaurantLogo: restaurant.restaurantLogo?.trim() ? resolveMediaUrl(restaurant.restaurantLogo, baseUrl) : LOGO_FALLBACK,
     };
+    // Fetch ratings and reviews for each product
+    const productIds = (result.data || []).map(item => String(item._id));
+    const reviewsAgg = await ReviewModel.aggregate([
+      { $match: { productId: { $in: productIds }, status: 'approved' } },
+      { 
+        $group: { 
+          _id: "$productId", 
+          averageRating: { $avg: { $toDouble: "$rating" } }, 
+          reviewCount: { $sum: 1 } 
+        } 
+      }
+    ]);
+    
+    const productRatings = {};
+    reviewsAgg.forEach(r => {
+      productRatings[r._id] = {
+        rating: r.averageRating ? Number(r.averageRating.toFixed(1)) : 0,
+        reviewCount: r.reviewCount || 0
+      };
+    });
+
     const data = (result.data || []).map((item) => {
       const selling = item.discountPrice > 0 ? item.discountPrice : item.price;
       const discount = item.discountPrice > 0 && item.price > item.discountPrice
         ? Math.round(((item.price - item.discountPrice) / item.price) * 100)
         : 0;
+      
+      const itemId = String(item._id);
+      const itemRating = productRatings[itemId] || { rating: 0, reviewCount: 0 };
+      
       return {
         ...item,
         foodType: getRestaurantItemFoodType(item),
@@ -904,6 +929,10 @@ export const listRestaurantItemsCatalog = async (req, res) => {
         restaurantId,
         restaurantLatitude: restaurantDoc.latitude,
         restaurantLongitude: restaurantDoc.longitude,
+        rating: itemRating.rating,
+        averageRating: itemRating.rating,
+        reviewCount: itemRating.reviewCount,
+        totalReviews: itemRating.reviewCount,
       };
     });
 
