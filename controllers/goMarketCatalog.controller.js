@@ -1094,6 +1094,9 @@ export const getGroceryProductStorefront = async (req, res) => {
         stock: p.stock || p.countInStock,
         description: p.description,
         rating: p.averageRating || p.rating || 0,
+        averageRating: p.averageRating || p.rating || 0,
+        reviewCount: p.totalReviews || 0,
+        totalReviews: p.totalReviews || 0,
         goMarketKind: "grocery",
       })),
       relatedPagination: {
@@ -1208,6 +1211,9 @@ export const getRestaurantItemStorefront = async (req, res) => {
             isAvailable: p.isAvailable !== false,
             description: p.description,
             rating: stats?.averageRating || 0,
+            averageRating: stats?.averageRating || 0,
+            reviewCount: stats?.totalReviews || 0,
+            totalReviews: stats?.totalReviews || 0,
             goMarketKind: "restaurant",
             foodType: getRestaurantItemFoodType(p),
           };
