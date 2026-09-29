@@ -526,6 +526,7 @@ export async function createProduct(request, response) {
       sale: request.body.sale || 0,
       colorOptions: request.body.colorOptions || [],
       specifications: request.body.specifications || [],
+      productOptions: request.body.productOptions || [],
       seller: request.userId,
     });
 
@@ -1572,6 +1573,7 @@ export async function updateProduct(request, response) {
         sale: request.body.sale || 0,
         colorOptions: request.body.colorOptions || [],
         specifications: request.body.specifications || [],
+        productOptions: request.body.productOptions || [],
         seller: request.body.seller,
       },
       { new: true },
