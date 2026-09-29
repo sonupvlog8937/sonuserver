@@ -39,6 +39,18 @@ const productSchema = mongoose.Schema(
         images: [{ type: String }],
       },
     ],
+    productOptions: [
+      {
+        name: { type: String, required: true },
+        values: [
+          {
+            value: { type: String, required: true },
+            price: { type: Number, required: true },
+            mrp: { type: Number, default: 0 },
+          },
+        ],
+      },
+    ],
     specifications: [
       {
         key:   { type: String, default: "" },
