@@ -2199,43 +2199,6 @@ export async function searchProductController(request, response) {
       return response.status(400).json({ error: true, success: false, message: "Query is required" });
     }
 
-    const applyAdvancedFilters = (items = []) => items.filter((item) => {
-      if (brands?.length && !brands.includes(item?.brand)) return false;
-      if (sizes?.length && !(item?.size || []).some(s => sizes.includes(s))) return false;
-      if (productTypes?.length) {
-        const t = item?.productType || item?.thirdsubCat || item?.subCat || item?.catName;
-        if (!productTypes.includes(t)) return false;
-      }
-      if (priceRanges?.length) {
-        const p = Number(item?.price || 0);
-        const inRange = priceRanges.some(r => { const [mn,mx] = String(r).split("-").map(Number); return !isNaN(mn)&&!isNaN(mx)&&p>=mn&&p<=mx; });
-        if (!inRange) return false;
-      }
-      if (saleOnly && Number(item?.discount || 0) <= 0) return false;
-      if (stockStatus === "inStock"    && Number(item?.countInStock || 0) <= 0) return false;
-      if (stockStatus === "outOfStock" && Number(item?.countInStock || 0) > 0)  return false;
-      if (discountRanges?.length && !discountRanges.some(mn => Number(item?.discount||0) >= Number(mn||0))) return false;
-      if (weights?.length    && !(item?.productWeight || []).some(w => weights.includes(w)))    return false;
-      if (ramOptions?.length && !(item?.productRam    || []).some(r => ramOptions.includes(r))) return false;
-      if (ratingBands?.length) {
-        const r = Number(item?.rating || 0);
-        const inBand = ratingBands.some(({ min, max }) => max === null ? r >= min : r >= min && r < max);
-        if (!inBand) return false;
-      }
-      return true;
-    });
-
-    const sortFilteredItems = (items = []) => [...items].sort((a, b) => {
-      if (sortType === "nameAsc")   return String(a?.name||"").localeCompare(String(b?.name||""));
-      if (sortType === "nameDesc")  return String(b?.name||"").localeCompare(String(a?.name||""));
-      if (sortType === "priceAsc")  return Number(a?.price||0) - Number(b?.price||0);
-      if (sortType === "priceDesc") return Number(b?.price||0) - Number(a?.price||0);
-      if (sortType === "latest")    return new Date(b?.createdAt||0).getTime() - new Date(a?.createdAt||0).getTime();
-      if (sortType === "popular")   { const d = Number(b?.rating||0)-Number(a?.rating||0); if(d!==0) return d; return Number(b?.sale||0)-Number(a?.sale||0); }
-      if (sortType === "featured")  { const d = Number(Boolean(b?.isFeatured))-Number(Boolean(a?.isFeatured)); if(d!==0) return d; }
-      return Number(b?.sale||0) - Number(a?.sale||0);
-    });
-
     const cleanQuery     = normalizeSearchText(query);
     const queryParts     = getMeaningfulSearchTokens(cleanQuery);
     const intentPhrases  = buildSearchIntentPhrases(cleanQuery);
@@ -2250,76 +2213,96 @@ export async function searchProductController(request, response) {
       return { $or: [{ name:r },{ brand:r },{ description:r },{ keywords:r },{ catName:r },{ subCat:r },{ thirdsubCat:r },{ title:r },{ searchKeywords:r },{ seoDescription:r },{ attributes:r },{ productType:r }] };
     });
 
-    // ✅ FIX: fetch + filterOptions parallel mein
-    const [products, filterOptions] = await Promise.all([
-      ProductModel.find({
-        $or: [
-          { name: fullQueryRegex }, { brand: fullQueryRegex }, { description: fullQueryRegex },
-          { keywords: fullQueryRegex }, { catName: fullQueryRegex }, { subCat: fullQueryRegex },
-          { thirdsubCat: fullQueryRegex }, { title: fullQueryRegex }, { searchKeywords: fullQueryRegex },
-          { seoDescription: fullQueryRegex }, { attributes: fullQueryRegex }, { productType: fullQueryRegex },
-          ...intentPhraseMatchers,
-          ...(termBasedMatcher.length ? [{ $and: termBasedMatcher }] : []),
-        ],
-      }).populate("category").lean().limit(250),
-      _getFilterOptions(), // ✅ FIX: cached — 2 separate full-DB scans hata diye
-    ]);
+    // ✅ BUILD MONGO QUERY WITH FILTERS (SERVER-SIDE)
+    const mongoQuery = {
+      $or: [
+        { name: fullQueryRegex }, { brand: fullQueryRegex }, { description: fullQueryRegex },
+        { keywords: fullQueryRegex }, { catName: fullQueryRegex }, { subCat: fullQueryRegex },
+        { thirdsubCat: fullQueryRegex }, { title: fullQueryRegex }, { searchKeywords: fullQueryRegex },
+        { seoDescription: fullQueryRegex }, { attributes: fullQueryRegex }, { productType: fullQueryRegex },
+        ...intentPhraseMatchers,
+        ...(termBasedMatcher.length ? [{ $and: termBasedMatcher }] : []),
+      ],
+    };
 
-    const vocabulary      = buildSearchVocabulary(products);
-    const correctedQuery  = getSpellCorrectedQuery(cleanQuery, vocabulary);
-    const correctedTokens = getMeaningfulSearchTokens(correctedQuery || cleanQuery);
-
-    let scoredProducts = products.map(item => {
-      const data = [item?.name, item?.brand, item?.catName, item?.subCat, item?.thirdsubCat, item?.description, ...(item?.keywords||[]), item?.title, item?.searchKeywords, item?.seoDescription, item?.attributes, item?.productType]
-        .map(f => normalizeSearchText(f)).filter(Boolean);
-      let score = 0;
-      for (const term of correctedTokens) {
-        if (data.some(f => f.includes(term) || term.includes(f))) { score += 8; continue; }
-        if (data.some(f => f.split(" ").filter(Boolean).some(w => levenshteinDistance(term,w) <= (term.length>6?2:1)))) score += 4;
-      }
-      if (normalizeSearchText(item?.name).includes(cleanQuery) || intentPhrases.some(p => normalizeSearchText(item?.name).includes(p))) score += 10;
-      return { item, score };
-    }).filter(e => e.score > 0).sort((a,b) => b.score-a.score || (b.item.sale||0)-(a.item.sale||0)).map(e => e.item);
-
-    if (!scoredProducts.length) {
-      // Fuzzy fallback
-      const fuzzyFallback = await ProductModel.find().populate("category").lean().limit(200);
-      const fbVocab       = buildSearchVocabulary(fuzzyFallback);
-      const fbCorrection  = correctedQuery || getSpellCorrectedQuery(cleanQuery, fbVocab);
-      const fbTokens      = getMeaningfulSearchTokens(fbCorrection || cleanQuery);
-
-      scoredProducts = fuzzyFallback.map(item => {
-        const fields = [item?.name, ...(item?.keywords||[]), item?.brand, item?.title, item?.searchKeywords, item?.seoDescription, item?.attributes, item?.productType].map(f => normalizeSearchText(f)).filter(Boolean);
-        const dist = Math.min(...fields.map(f => Math.min(...f.split(" ").filter(Boolean).map(w => Math.min(...fbTokens.map(t => levenshteinDistance(t,w)))))));
-        return { item, distance: dist };
-      }).filter(e => e.distance <= 2).sort((a,b) => a.distance-b.distance).map(e => e.item);
-
-      scoredProducts = sortFilteredItems(applyAdvancedFilters(scoredProducts));
-      const total = scoredProducts.length;
-      const paginatedProducts = scoredProducts.slice((requestedPage-1)*requestedLimit, requestedPage*requestedLimit);
-
-      return response.status(200).json({
-        error: false, success: true, products: applyUserRatingFieldsList(paginatedProducts), total,
-        page: requestedPage, totalPages: Math.max(1, Math.ceil(total/requestedLimit)),
-        originalQuery: query, correctedQuery: fbCorrection,
-        suggestions: buildSearchSuggestions(scoredProducts, query, fbCorrection),
-        suggestionProducts: buildSuggestionProducts(scoredProducts),
-        aiInsights: buildAiSearchInsights(paginatedProducts, fbCorrection),
-        filterOptions,
-      });
+    // Apply filters to mongo query (server-side filtering)
+    if (brands?.length)        mongoQuery.brand = { $in: brands };
+    if (sizes?.length)         mongoQuery.size = { $in: sizes };
+    if (weights?.length)       mongoQuery.productWeight = { $in: weights };
+    if (ramOptions?.length)    mongoQuery.productRam = { $in: ramOptions };
+    if (saleOnly)              mongoQuery.discount = { $gt: 0 };
+    if (stockStatus === "inStock")    mongoQuery.countInStock = { $gt: 0 };
+    if (stockStatus === "outOfStock") mongoQuery.countInStock = { $lte: 0 };
+    
+    if (discountRanges?.length) {
+      const minDiscount = Math.min(...discountRanges.map(Number).filter(Boolean));
+      if (Number.isFinite(minDiscount)) mongoQuery.discount = { ...(mongoQuery.discount || {}), $gte: minDiscount };
     }
 
-    scoredProducts = sortFilteredItems(applyAdvancedFilters(scoredProducts));
-    const total = scoredProducts.length;
-    const paginatedProducts = scoredProducts.slice((requestedPage-1)*requestedLimit, requestedPage*requestedLimit);
+    const andConditions = [];
+    if (productTypes?.length) {
+      andConditions.push({ $or: [
+        { productType: { $in: productTypes } }, { thirdsubCat: { $in: productTypes } },
+        { subCat: { $in: productTypes } },      { catName: { $in: productTypes } },
+      ]});
+    }
+    if (priceRanges?.length) {
+      const rangeFilters = priceRanges.map(r => { 
+        const [mn, mx] = String(r).split("-").map(Number); 
+        return (isNaN(mn)||isNaN(mx)) ? null : { price: { $gte: mn, $lte: mx } }; 
+      }).filter(Boolean);
+      if (rangeFilters.length) andConditions.push({ $or: rangeFilters });
+    }
+    if (ratingBands?.length) {
+      const ratingFilters = ratingBands.map(({ min, max }) => {
+        if (max === null) return { rating: { $gte: min } };
+        return { rating: { $gte: min, $lt: max } };
+      });
+      if (ratingFilters.length) andConditions.push({ $or: ratingFilters });
+    }
+    if (andConditions.length) mongoQuery.$and = [...(mongoQuery.$and || []), ...andConditions];
+
+    // ✅ SORT CONFIG (SERVER-SIDE)
+    const sortConfig = {
+      bestSeller: { sale: -1, rating: -1, createdAt: -1, _id: -1 },
+      latest:     { createdAt: -1, _id: -1 },
+      popular:    { rating: -1, sale: -1, _id: -1 },
+      featured:   { isFeatured: -1, sale: -1, _id: -1 },
+      priceAsc:   { price: 1, _id: 1 },
+      priceDesc:  { price: -1, _id: -1 },
+      nameAsc:    { name: 1, _id: 1 },
+      nameDesc:   { name: -1, _id: -1 },
+    };
+
+    // ✅ SERVER-SIDE PAGINATION WITH SKIP & LIMIT
+    const [products, total, filterOptions] = await Promise.all([
+      ProductModel.find(mongoQuery)
+        .populate("category")
+        .sort(sortConfig[sortType] || sortConfig.bestSeller)
+        .skip((requestedPage - 1) * requestedLimit)
+        .limit(requestedLimit)
+        .lean(),
+      ProductModel.countDocuments(mongoQuery),
+      _getFilterOptions(), // ✅ cached
+    ]);
+
+    // Build suggestions from first batch only (not all results)
+    const suggestions = buildSearchSuggestions(products, query, "");
+    const suggestionProducts = buildSuggestionProducts(products);
+    const aiInsights = buildAiSearchInsights(products, "");
 
     return response.status(200).json({
-      error: false, success: true, products: applyUserRatingFieldsList(paginatedProducts), total,
-      page: requestedPage, totalPages: Math.max(1, Math.ceil(total/requestedLimit)),
-      originalQuery: query, correctedQuery,
-      suggestions: buildSearchSuggestions(scoredProducts, query, correctedQuery),
-      suggestionProducts: buildSuggestionProducts(scoredProducts),
-      aiInsights: buildAiSearchInsights(paginatedProducts, correctedQuery),
+      error: false, 
+      success: true, 
+      products: applyUserRatingFieldsList(products), 
+      total,
+      page: requestedPage, 
+      totalPages: Math.max(1, Math.ceil(total/requestedLimit)),
+      originalQuery: query, 
+      correctedQuery: "",
+      suggestions,
+      suggestionProducts,
+      aiInsights,
       filterOptions,
     });
   } catch (error) {
