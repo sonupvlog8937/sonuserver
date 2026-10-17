@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import auth from '../middlewares/auth.js';
+import optionalAuth from '../middlewares/optionalAuth.js';
 import upload from '../middlewares/multer.js';
 import authorizeRole from '../middlewares/authorizeRole.js';
 import {
@@ -9,7 +10,7 @@ import {
   getAllFeaturedProducts, getAllProducts, getAllProductsByCatId,
   getAllProductsByCatName, getAllProductsByPrice, getAllProductsByRating,
   getAllProductsBySubCatId, getAllProductsBySubCatName,
-  getAllProductsByThirdLavelCatId, getProduct, getProductRams,
+  getAllProductsByThirdLavelCatId, getAllProductsByThirdLavelCatName, getProduct, getProductRams,
   getProductsCount, updateProduct, updateProductRam, uploadImages,
   getProductRamsById, createProductWEIGHT, deleteProductWEIGHT,
   updateProductWeight, getProductWeight, getProductWeightById,
@@ -63,25 +64,25 @@ productRouter.delete('/deleteMultiple',     deleteMultipleProduct);
 // ⚠️  CRITICAL: Static paths MUST come before /:id
 //    Express matches routes top-to-bottom. If /:id is declared first,
 //    it will catch requests like /getAllProducts, /seller/products etc.
-productRouter.get('/getAllProducts',                    getAllProducts);
-productRouter.get('/getAllProductsBanners',             getAllProductsBanners);
-productRouter.get('/getAllProductsByCatId/:id',         getAllProductsByCatId);
-productRouter.get('/getAllProductsByCatName',           getAllProductsByCatName);
-productRouter.get('/getAllProductsBySubCatId/:id',      getAllProductsBySubCatId);
-productRouter.get('/getAllProductsBySubCatName',        getAllProductsBySubCatName);
-productRouter.get('/getAllProductsByThirdLavelCat/:id', getAllProductsByThirdLavelCatId);
-productRouter.get('/getAllProductsByThirdLavelCatName', getAllProductsBySubCatName);
-productRouter.get('/getAllProductsByPrice',             getAllProductsByPrice);
-productRouter.get('/getAllProductsByRating',            getAllProductsByRating);
-productRouter.get('/getAllProductsCount',               getProductsCount);
-productRouter.get('/getAllFeaturedProducts',            getAllFeaturedProducts);
+productRouter.get('/getAllProducts',                    optionalAuth, getAllProducts);
+productRouter.get('/getAllProductsBanners',             optionalAuth, getAllProductsBanners);
+productRouter.get('/getAllProductsByCatId/:id',         optionalAuth, getAllProductsByCatId);
+productRouter.get('/getAllProductsByCatName',           optionalAuth, getAllProductsByCatName);
+productRouter.get('/getAllProductsBySubCatId/:id',      optionalAuth, getAllProductsBySubCatId);
+productRouter.get('/getAllProductsBySubCatName',        optionalAuth, getAllProductsBySubCatName);
+productRouter.get('/getAllProductsByThirdLavelCat/:id', optionalAuth, getAllProductsByThirdLavelCatId);
+productRouter.get('/getAllProductsByThirdLavelCatName', optionalAuth, getAllProductsByThirdLavelCatName);
+productRouter.get('/getAllProductsByPrice',             optionalAuth, getAllProductsByPrice);
+productRouter.get('/getAllProductsByRating',            optionalAuth, getAllProductsByRating);
+productRouter.get('/getAllProductsCount',               optionalAuth, getProductsCount);
+productRouter.get('/getAllFeaturedProducts',            optionalAuth, getAllFeaturedProducts);
 
 // ─── SELLER ROUTES (static — must be above /:id) ─────────────────────────────
 productRouter.get('/seller/products',        auth, authorizeRole(...ANY_SELLER_ROLES), getSellerProducts);
 productRouter.get('/seller/dashboard-stats', auth, authorizeRole(...ANY_SELLER_ROLES), getSellerDashboardStats);
 productRouter.patch('/seller/grocery-stock/:id', auth, authorizeRole(...GO_MARKET_SHOP_SELLERS), patchGroceryStock);
 productRouter.patch('/seller/item-availability/:id', auth, authorizeRole('RESTAURANT_SELLER'), patchRestaurantAvailability);
-productRouter.get('/store/:sellerId',        getProductsBySellerPublic);
+productRouter.get('/store/:sellerId',        optionalAuth, getProductsBySellerPublic);
 
 // ─── REVIEW ROUTES ────────────────────────────────────────────────────────────
 productRouter.post('/reviews/add',       auth,                        addReview);
@@ -89,10 +90,10 @@ productRouter.get('/reviews/:productId',                              getProduct
 productRouter.delete('/reviews/:id',     auth, authorizeRole('ADMIN'), deleteReview);
 
 // ─── FILTER / SORT / SEARCH ───────────────────────────────────────────────────
-productRouter.post('/filters',    filters);
+productRouter.post('/filters',    optionalAuth, filters);
 productRouter.post('/sortBy',     sortBy);
-productRouter.post('/search/get', searchProductController);
-productRouter.get('/search/suggestions', productSearchSuggestions);
+productRouter.post('/search/get', optionalAuth, searchProductController);
+productRouter.get('/search/suggestions', optionalAuth, productSearchSuggestions);
 
 // ─── PRODUCT RAM ──────────────────────────────────────────────────────────────
 productRouter.post('/productRAMS/create', auth, authorizeRole(...ALL_SELLER_ROLES), createProductRAMS);
@@ -123,6 +124,6 @@ productRouter.delete('/deteleImage', auth, removeImageFromCloudinary);
 //    /getAllProducts, /seller/products jaisi routes ko bhi match kar leta hai
 //    aur wrong handler call hota hai — product page slow/broken ho jaata hai.
 productRouter.delete('/:id', auth, authorizeRole(...ALL_SELLER_ROLES), deleteProduct);
-productRouter.get('/:id',    getProduct);   // ← LAST
+productRouter.get('/:id',    optionalAuth, getProduct);   // ← LAST
 
 export default productRouter;
