@@ -20,6 +20,7 @@ const productSchema = mongoose.Schema(
     rating:       { type: Number, default: 0 },
     numReviews:   { type: Number, default: 0 },
     isFeatured:   { type: Boolean, default: false },
+    isSponsored:  { type: Boolean, default: false },
     discount:     { type: Number, required: true },
     sale:         { type: Number, default: 0 },
     productRam:    [{ type: String, default: null }],
@@ -77,6 +78,7 @@ productSchema.index({ thirdsubCatId: 1 });
 productSchema.index({ catName: 1 });
 productSchema.index({ subCat: 1 });
 productSchema.index({ isFeatured: 1 });
+productSchema.index({ isSponsored: -1, createdAt: -1 });
 productSchema.index({ isDisplayOnHomeBanner: 1 });
 productSchema.index({ createdAt: -1 });
 productSchema.index({ price: 1 });
