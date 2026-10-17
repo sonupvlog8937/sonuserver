@@ -594,6 +594,58 @@ export async function getAllProducts(request, response) {
     return response.status(500).json({ message: error.message || error, error: true, success: false });
   }
 }
+
+export async function updateSponsoredProductStatus(request, response) {
+  try {
+    const { id } = request.params;
+    const { isSponsored } = request.body;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return response.status(400).json({
+        error: true,
+        success: false,
+        message: "Invalid product ID",
+      });
+    }
+
+    if (typeof isSponsored !== "boolean") {
+      return response.status(400).json({
+        error: true,
+        success: false,
+        message: "isSponsored must be a boolean",
+      });
+    }
+
+    const product = await ProductModel.findByIdAndUpdate(
+      id,
+      { $set: { isSponsored } },
+      { new: true, runValidators: true },
+    )
+      .select("_id isSponsored")
+      .lean();
+
+    if (!product) {
+      return response.status(404).json({
+        error: true,
+        success: false,
+        message: "Product not found",
+      });
+    }
+
+    return response.status(200).json({
+      error: false,
+      success: true,
+      product,
+    });
+  } catch (error) {
+    return response.status(500).json({
+      message: error.message || error,
+      error: true,
+      success: false,
+    });
+  }
+}
+
 //get all products by category id
 export async function getAllProductsByCatId(request, response) {
   try {
@@ -2149,7 +2201,8 @@ export async function productSearchSuggestions(request, response) {
         { productType: new RegExp(query, "i") },
       ]
     })
-    .select("name brand catName subCat image price discount title searchKeywords seoDescription attributes productType")
+    .select("name brand catName subCat images image price discount title searchKeywords seoDescription attributes productType isSponsored")
+    .sort({ isSponsored: -1 })
     .limit(200)
     .lean();
 
@@ -2180,6 +2233,7 @@ export async function productSearchSuggestions(request, response) {
       image: p.image,
       price: p.price,
       discount: p.discount,
+      isSponsored: p.isSponsored || false,
     }));
 
     return response.status(200).json({
@@ -2274,14 +2328,14 @@ export async function searchProductController(request, response) {
 
     // ✅ SORT CONFIG (SERVER-SIDE)
     const sortConfig = {
-      bestSeller: { sale: -1, rating: -1, createdAt: -1, _id: -1 },
-      latest:     { createdAt: -1, _id: -1 },
-      popular:    { rating: -1, sale: -1, _id: -1 },
-      featured:   { isFeatured: -1, sale: -1, _id: -1 },
-      priceAsc:   { price: 1, _id: 1 },
-      priceDesc:  { price: -1, _id: -1 },
-      nameAsc:    { name: 1, _id: 1 },
-      nameDesc:   { name: -1, _id: -1 },
+      bestSeller: { isSponsored: -1, sale: -1, rating: -1, createdAt: -1, _id: -1 },
+      latest:     { isSponsored: -1, createdAt: -1, _id: -1 },
+      popular:    { isSponsored: -1, rating: -1, sale: -1, _id: -1 },
+      featured:   { isSponsored: -1, isFeatured: -1, sale: -1, _id: -1 },
+      priceAsc:   { isSponsored: -1, price: 1, _id: 1 },
+      priceDesc:  { isSponsored: -1, price: -1, _id: -1 },
+      nameAsc:    { isSponsored: -1, name: 1, _id: 1 },
+      nameDesc:   { isSponsored: -1, name: -1, _id: -1 },
     };
 
     // ✅ SERVER-SIDE PAGINATION WITH SKIP & LIMIT
