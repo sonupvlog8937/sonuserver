@@ -31,6 +31,7 @@ import {
 import { v2 as cloudinary } from "cloudinary";
 import fs from "fs";
 import mongoose from "mongoose";
+import Market from "../models/market.model.js";
 
 const SELLER_ROLES = ["SELLER", "GROCERY_SELLER", "RESTAURANT_SELLER"];
 
@@ -50,6 +51,49 @@ const GO_MARKET_SHOP_SELLERS = [
 ];
 
 const isSellerRole = (role) => SELLER_ROLES.includes(role) || GO_MARKET_SHOP_SELLERS.includes(role);
+
+const resolveProductMarketIds = async (request, existingMarketIds = []) => {
+  if (isSellerRole(request.currentUser?.role)) {
+    const user = await UserModel.findById(request.userId).select("storeProfile.marketId").lean();
+    const marketId = user?.storeProfile?.marketId;
+    if (!marketId) {
+      throw Object.assign(new Error("Your seller account is not assigned to a market"), { statusCode: 400 });
+    }
+    return [marketId];
+  }
+
+  const requestedIds = request.body.marketIds;
+  if (requestedIds === undefined) return existingMarketIds;
+  if (!Array.isArray(requestedIds) || requestedIds.length === 0) {
+    throw Object.assign(new Error("Select at least one market"), { statusCode: 400 });
+  }
+  const ids = [...new Set(requestedIds.map(String))];
+  if (ids.some((id) => !mongoose.Types.ObjectId.isValid(id))) {
+    throw Object.assign(new Error("One or more selected markets are invalid"), { statusCode: 400 });
+  }
+  const activeMarkets = await Market.find({ _id: { $in: ids }, status: "active" }).select("_id").lean();
+  if (activeMarkets.length !== ids.length) {
+    throw Object.assign(new Error("One or more selected markets are unavailable"), { statusCode: 400 });
+  }
+  return activeMarkets.map(({ _id }) => _id);
+};
+
+const marketProductFilter = (request, filter = {}) => {
+  const marketId = request.query.marketId || request.body?.marketId;
+  if (!marketId) {
+    return ["ADMIN", "VICE_ADMIN"].includes(request.currentUser?.role)
+      ? filter
+      : { ...filter, _id: null };
+  }
+  if (!mongoose.Types.ObjectId.isValid(marketId)) return { ...filter, _id: null };
+  return { ...filter, marketIds: marketId };
+};
+
+const requestedMarketId = (request) => {
+  const marketId = request.query.marketId || request.body?.marketId;
+  if (!marketId) return undefined;
+  return mongoose.Types.ObjectId.isValid(marketId) ? marketId : null;
+};
 
 const resolveRequestRole = async (request) => {
   if (request.currentUser?.role) return request.currentUser.role;
@@ -333,16 +377,15 @@ setProductRatingCacheInvalidator(_cacheDel);
 
 // filterOptions poore DB se ek baar fetch karo, 10 min cache rakho
 // (filters/search function bar-bar ye fetch karta tha — ab nahi)
-let _filterOptionsCache = null;
-let _filterOptionsCacheExp = 0;
-async function _getFilterOptions() {
-  if (_filterOptionsCache && Date.now() < _filterOptionsCacheExp) {
-    return _filterOptionsCache;
-  }
-  const items = await ProductModel.find({})
+const _filterOptionsCache = new Map();
+async function _getFilterOptions(marketId) {
+  const key = marketId === null ? "invalid" : marketId || "all";
+  const cached = _filterOptionsCache.get(key);
+  if (cached && Date.now() < cached.exp) return cached.data;
+  const items = await ProductModel.find(marketId === null ? { _id: null } : marketId ? { marketIds: marketId } : {})
     .select("brand size productType thirdsubCat subCat catName productWeight productRam colorOptions.name")
     .lean();
-  _filterOptionsCache = {
+  const data = {
     brands:       [...new Set(items.map(i => i?.brand?.trim()).filter(Boolean))],
     sizes:        [...new Set(items.flatMap(i => i?.size || []).filter(Boolean))],
     productTypes: [...new Set(items.map(i => i?.productType || i?.thirdsubCat || i?.subCat || i?.catName).filter(Boolean))],
@@ -350,8 +393,8 @@ async function _getFilterOptions() {
     ramOptions:   [...new Set(items.flatMap(i => i?.productRam || []).filter(Boolean))],
     colors:       [...new Set(items.flatMap(i => (i?.colorOptions || []).map(c => c?.name)).filter(Boolean))],
   };
-  _filterOptionsCacheExp = Date.now() + 10 * 60 * 1000; // 10 min
-  return _filterOptionsCache;
+  _filterOptionsCache.set(key, { data, exp: Date.now() + 10 * 60 * 1000 });
+  return data;
 }
 //image upload
 var imagesArr = [];
@@ -418,6 +461,7 @@ export async function uploadBannerImages(request, response) {
 export async function createProduct(request, response) {
   try {
     const role = await resolveRequestRole(request);
+    const marketIds = await resolveProductMarketIds(request);
     const requestImages = Array.isArray(request.body.images) ? request.body.images.filter(Boolean) : [];
     const uploadedImages = Array.isArray(imagesArr) ? imagesArr.filter(Boolean) : [];
     const imageList = [...new Set([...uploadedImages, ...requestImages, request.body.image].filter(Boolean))];
@@ -521,6 +565,7 @@ export async function createProduct(request, response) {
       rating: 0,
       numReviews: 0,
       isFeatured: request.body.isFeatured,
+      marketIds,
       discount: request.body.discount,
       productRam: request.body.productRam,
       size: request.body.size,
@@ -553,7 +598,7 @@ export async function createProduct(request, response) {
       product: product,
     });
   } catch (error) {
-    return response.status(500).json({
+    return response.status(error.statusCode || 500).json({
       message: error.message || error,
       error: true,
       success: false,
@@ -567,18 +612,29 @@ export async function getAllProducts(request, response) {
   try {
     backfillProductRatingsOnce();
     const page = parseInt(request.query.page) || 1;
-    const limit = parseInt(request.query.limit) || 25;
-    const total = await ProductModel.countDocuments();
-    const products = await ProductModel.find()
+    const limit = parseInt(request.query.limit) || 20; // ✅ Default 20
+    const filter = marketProductFilter(request);
+    const total = await ProductModel.countDocuments(filter);
+    const totalPages = Math.ceil(total / limit);
+    
+    const products = await ProductModel.find(filter)
       .populate("seller", "name email role status storeProfile")
       .sort({ sale: -1, createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit)
       .lean(); // ✅ FIX: lean() — 2-3x faster, plain JS object return karta hai
+    
     if (!products) return response.status(400).json({ error: true, success: false });
+    
     return response.status(200).json({
-      error: false, success: true, products: applyUserRatingFieldsList(products),
-      total, page, totalPages: Math.ceil(total / limit), totalCount: total,
+      error: false, 
+      success: true, 
+      products: applyUserRatingFieldsList(products),
+      total,
+      totalProducts: total, // ✅ For AllProductsSection compatibility
+      page, 
+      totalPages,
+      totalCount: total,
     });
   } catch (error) {
     return response.status(500).json({ message: error.message || error, error: true, success: false });
@@ -591,10 +647,11 @@ export async function getAllProductsByCatId(request, response) {
     const perPage = parseInt(request.query.limit) || parseInt(request.query.perPage) || 10;
 
     // ✅ Fix: sirf is catId ke products count karo
-    const totalPosts = await ProductModel.countDocuments({ catId: request.params.id });
+    const filter = marketProductFilter(request, { catId: request.params.id });
+    const totalPosts = await ProductModel.countDocuments(filter);
     const totalPages = Math.ceil(totalPosts / perPage) || 1;
 
-    const products = await ProductModel.find({ catId: request.params.id })
+    const products = await ProductModel.find(filter)
       .populate("category")
        .populate("seller", "name email role status storeProfile")
       .skip((page - 1) * perPage)
@@ -624,7 +681,8 @@ export async function getAllProductsByCatName(request, response) {
     const page = parseInt(request.query.page) || 1;
     const perPage = parseInt(request.query.perPage) || 10000;
 
-    const totalPosts = await ProductModel.countDocuments();
+    const filter = marketProductFilter(request, { catName: request.query.catName });
+    const totalPosts = await ProductModel.countDocuments(filter);
     const totalPages = Math.ceil(totalPosts / perPage);
 
     if (page > totalPages) {
@@ -635,9 +693,7 @@ export async function getAllProductsByCatName(request, response) {
       });
     }
 
-    const products = await ProductModel.find({
-      catName: request.query.catName,
-    })
+    const products = await ProductModel.find(filter)
       .populate("category")
       .populate("seller", "name email role status storeProfile")
       .skip((page - 1) * perPage)
@@ -675,10 +731,11 @@ export async function getAllProductsBySubCatId(request, response) {
     const perPage = parseInt(request.query.limit) || parseInt(request.query.perPage) || 10;
 
     // ✅ Fix: totalPages sirf is subCatId ke products se calculate karo, poore DB se nahi
-    const totalPosts = await ProductModel.countDocuments({ subCatId: request.params.id });
+    const filter = marketProductFilter(request, { subCatId: request.params.id });
+    const totalPosts = await ProductModel.countDocuments(filter);
     const totalPages = Math.ceil(totalPosts / perPage) || 1;
 
-    const products = await ProductModel.find({ subCatId: request.params.id })
+    const products = await ProductModel.find(filter)
       .populate("category")
       .populate("seller", "name email role status storeProfile")
       .skip((page - 1) * perPage)
@@ -708,7 +765,8 @@ export async function getAllProductsBySubCatName(request, response) {
     const page = parseInt(request.query.page) || 1;
     const perPage = parseInt(request.query.perPage) || 10000;
 
-    const totalPosts = await ProductModel.countDocuments();
+    const filter = marketProductFilter(request, { subCat: request.query.subCat });
+    const totalPosts = await ProductModel.countDocuments(filter);
     const totalPages = Math.ceil(totalPosts / perPage);
 
     if (page > totalPages) {
@@ -719,9 +777,7 @@ export async function getAllProductsBySubCatName(request, response) {
       });
     }
 
-    const products = await ProductModel.find({
-      subCat: request.query.subCat,
-    })
+    const products = await ProductModel.find(filter)
       .populate("category")
       .populate("seller", "name email role status storeProfile")
       .skip((page - 1) * perPage)
@@ -758,10 +814,11 @@ export async function getAllProductsByThirdLavelCatId(request, response) {
     const perPage = parseInt(request.query.limit) || parseInt(request.query.perPage) || 10;
 
     // ✅ Fix: sirf is thirdsubCatId ke products count karo
-    const totalPosts = await ProductModel.countDocuments({ thirdsubCatId: request.params.id });
+    const filter = marketProductFilter(request, { thirdsubCatId: request.params.id });
+    const totalPosts = await ProductModel.countDocuments(filter);
     const totalPages = Math.ceil(totalPosts / perPage) || 1;
 
-    const products = await ProductModel.find({ thirdsubCatId: request.params.id })
+    const products = await ProductModel.find(filter)
       .populate("category")
        .populate("seller", "name email role status storeProfile")
       .skip((page - 1) * perPage)
@@ -791,7 +848,8 @@ export async function getAllProductsByThirdLavelCatName(request, response) {
     const page = parseInt(request.query.page) || 1;
     const perPage = parseInt(request.query.perPage) || 10000;
 
-    const totalPosts = await ProductModel.countDocuments();
+    const filter = marketProductFilter(request, { thirdsubCat: request.query.thirdsubCat });
+    const totalPosts = await ProductModel.countDocuments(filter);
     const totalPages = Math.ceil(totalPosts / perPage);
 
     if (page > totalPages) {
@@ -802,9 +860,7 @@ export async function getAllProductsByThirdLavelCatName(request, response) {
       });
     }
 
-    const products = await ProductModel.find({
-      thirdsubCat: request.query.thirdsubCat,
-    })
+    const products = await ProductModel.find(filter)
       .populate("category")
       .skip((page - 1) * perPage)
       .limit(perPage)
@@ -839,17 +895,13 @@ export async function getAllProductsByPrice(request, response) {
   let productList = [];
 
   if (request.query.catId !== "" && request.query.catId !== undefined) {
-    const productListArr = await ProductModel.find({
-      catId: request.query.catId,
-    }).populate("category");
+    const productListArr = await ProductModel.find(marketProductFilter(request, { catId: request.query.catId })).populate("category");
 
     productList = productListArr;
   }
 
   if (request.query.subCatId !== "" && request.query.subCatId !== undefined) {
-    const productListArr = await ProductModel.find({
-      subCatId: request.query.subCatId,
-    }).populate("category");
+    const productListArr = await ProductModel.find(marketProductFilter(request, { subCatId: request.query.subCatId })).populate("category");
 
     productList = productListArr;
   }
@@ -858,9 +910,7 @@ export async function getAllProductsByPrice(request, response) {
     request.query.thirdsubCatId !== "" &&
     request.query.thirdsubCatId !== undefined
   ) {
-    const productListArr = await ProductModel.find({
-      thirdsubCatId: request.query.thirdsubCatId,
-    }).populate("category");
+    const productListArr = await ProductModel.find(marketProductFilter(request, { thirdsubCatId: request.query.thirdsubCatId })).populate("category");
 
     productList = productListArr;
   }
@@ -913,6 +963,7 @@ export async function getAllProductsByRating(request, response) {
 
     if (request.query.catId !== undefined) {
       products = await ProductModel.find({
+        ...marketProductFilter(request),
         rating: request.query.rating,
         catId: request.query.catId,
       })
@@ -924,6 +975,7 @@ export async function getAllProductsByRating(request, response) {
 
     if (request.query.subCatId !== undefined) {
       products = await ProductModel.find({
+        ...marketProductFilter(request),
         rating: request.query.rating,
         subCatId: request.query.subCatId,
       })
@@ -935,6 +987,7 @@ export async function getAllProductsByRating(request, response) {
 
     if (request.query.thirdsubCatId !== undefined) {
       products = await ProductModel.find({
+        ...marketProductFilter(request),
         rating: request.query.rating,
         thirdsubCatId: request.query.thirdsubCatId,
       })
@@ -989,7 +1042,7 @@ export async function getProductsBySellerPublic(request, response) {
     const discountMin = Number(request.query.discountMin || 0);
 
     // Build mongo query
-    const query = { seller: sellerId };
+    const query = marketProductFilter(request, { seller: sellerId });
 
     if (catId) query.catId = catId;
 
@@ -1202,7 +1255,7 @@ export async function getSellerProducts(request, response) {
 
 export async function getProductsCount(request, response) {
   try {
-    const productsCount = await ProductModel.countDocuments();
+    const productsCount = await ProductModel.countDocuments(marketProductFilter(request));
 
     if (!productsCount) {
       response.status(500).json({
@@ -1229,6 +1282,7 @@ export async function getProductsCount(request, response) {
 export async function getAllFeaturedProducts(request, response) {
   try {
     const products = await ProductModel.find({
+      ...marketProductFilter(request),
       isFeatured: true,
     }).populate("category");
 
@@ -1257,6 +1311,7 @@ export async function getAllFeaturedProducts(request, response) {
 export async function getAllProductsBanners(request, response) {
   try {
     const products = await ProductModel.find({
+      ...marketProductFilter(request),
       isDisplayOnHomeBanner: true,
     }).populate("category");
 
@@ -1413,7 +1468,8 @@ export async function getProduct(request, response) {
     }
 
     // Cache hit — instant return, no DB call
-    const cached = _cacheGet(id);
+    const marketId = request.query.marketId;
+    const cached = marketId ? null : _cacheGet(id);
     if (cached) {
       return response
         .status(200)
@@ -1422,7 +1478,7 @@ export async function getProduct(request, response) {
     }
 
     // Cache miss — DB se fetch, lean() se fast
-    const product = await ProductModel.findById(id)
+    const product = await ProductModel.findOne(marketProductFilter(request, { _id: id }))
       .populate("category")
       .lean(); // ✅ KEY FIX
 
@@ -1546,6 +1602,7 @@ export async function updateProduct(request, response) {
     if (isSellerRole(request.currentUser?.role) && existingProduct.seller?.toString() !== request.userId) {
       return response.status(403).json({ error: true, success: false, message: "You can update only your products" });
     }
+    const marketIds = await resolveProductMarketIds(request, existingProduct.marketIds || []);
     const product = await ProductModel.findByIdAndUpdate(
       request.params.id,
       {
@@ -1568,6 +1625,7 @@ export async function updateProduct(request, response) {
         thirdsubCatId: request.body.thirdsubCatId,
         countInStock: request.body.countInStock,
         isFeatured: request.body.isFeatured,
+        marketIds,
         discount: request.body.discount,
         productRam: request.body.productRam,
         size: request.body.size,
@@ -1576,7 +1634,7 @@ export async function updateProduct(request, response) {
         colorOptions: request.body.colorOptions || [],
         specifications: request.body.specifications || [],
         productOptions: request.body.productOptions || [],
-        seller: request.body.seller,
+        seller: existingProduct.seller,
       },
       { new: true },
     );
@@ -1584,11 +1642,11 @@ export async function updateProduct(request, response) {
       return response.status(404).json({ message: "the product can not be updated!", status: false });
     }
     _cacheDel(request.params.id); // ✅ FIX: update ke baad cache clear
-    _filterOptionsCache = null;   // ✅ FIX: filter options refresh
+    _filterOptionsCache.clear();  // ✅ FIX: filter options refresh
     imagesArr = [];
     return response.status(200).json({ message: "The product is updated", error: false, success: true });
   } catch (error) {
-    return response.status(500).json({ message: error.message || error, error: true, success: false });
+    return response.status(error.statusCode || 500).json({ message: error.message || error, error: true, success: false });
   }
 }
 export async function createProductRAMS(request, response) {
@@ -2059,6 +2117,7 @@ export async function filters(request, response) {
     if (rangeFilters.length) andConditions.push({ $or: rangeFilters });
   }
   if (andConditions.length) filterQuery.$and = [...(filterQuery.$and || []), ...andConditions];
+  Object.assign(filterQuery, marketProductFilter(request));
 
   const sortConfig = {
     bestSeller: { sale: -1, rating: -1, createdAt: -1, _id: -1 },
@@ -2084,7 +2143,7 @@ export async function filters(request, response) {
         .limit(perPage)
         .lean(), // ✅ lean()
       ProductModel.countDocuments(filterQuery),
-      _getFilterOptions(), // ✅ FIX: cached — bar-bar poora DB scan nahi
+      _getFilterOptions(requestedMarketId(request)), // ✅ FIX: cached per market
     ]);
 
     return response.status(200).json({
@@ -2126,6 +2185,7 @@ export async function productSearchSuggestions(request, response) {
 
     // Fetch products with basic search
     const products = await ProductModel.find({
+      ...marketProductFilter(request),
       $or: [
         { name: new RegExp(query, "i") },
         { brand: new RegExp(query, "i") },
@@ -2223,6 +2283,7 @@ export async function searchProductController(request, response) {
         ...intentPhraseMatchers,
         ...(termBasedMatcher.length ? [{ $and: termBasedMatcher }] : []),
       ],
+      ...marketProductFilter(request),
     };
 
     // Apply filters to mongo query (server-side filtering)
@@ -2283,7 +2344,7 @@ export async function searchProductController(request, response) {
         .limit(requestedLimit)
         .lean(),
       ProductModel.countDocuments(mongoQuery),
-      _getFilterOptions(), // ✅ cached
+      _getFilterOptions(requestedMarketId(request)), // ✅ cached per market
     ]);
 
     // Build suggestions from first batch only (not all results)
