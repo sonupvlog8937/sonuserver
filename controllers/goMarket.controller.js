@@ -498,12 +498,6 @@ export const setPreferredMarket = async (req, res) => {
     
     if (!userId) return sendError(res, "Login required", 401);
     if (!marketId || !isObjectId(marketId)) return sendError(res, "Valid marketId is required", 400);
-    if (location && (
-      !Number.isFinite(location?.lat) || location.lat < -90 || location.lat > 90
-      || !Number.isFinite(location?.lng) || location.lng < -180 || location.lng > 180
-    )) {
-      return sendError(res, "Valid latitude and longitude are required", 400);
-    }
     
     // Verify market exists and is active
     const market = await Market.findOne({ _id: marketId, status: "active" }).lean();
@@ -515,8 +509,7 @@ export const setPreferredMarket = async (req, res) => {
     const existingUser = await UserModel.findById(userId).select("goMarketLocation").lean();
     const hasSavedLocation = Array.isArray(existingUser?.goMarketLocation?.coordinates)
       && existingUser.goMarketLocation.coordinates.length === 2
-      && (existingUser.goMarketLocation.coordinates.some((value) => Number(value) !== 0)
-        || Boolean(existingUser.goMarketLocation.updatedAt));
+      && existingUser.goMarketLocation.coordinates.some((value) => Number(value) !== 0);
     
     const update = { preferredMarketId: marketId };
     
@@ -555,39 +548,6 @@ export const setPreferredMarket = async (req, res) => {
     ok(res, { message: "Preferred market saved", data: { preferredMarketId: marketId, goMarketLocation: user?.goMarketLocation || null } });
   } catch (error) {
     console.error("❌ setPreferredMarket error:", error);
-    sendError(res, error);
-  }
-};
-
-export const saveCurrentLocation = async (req, res) => {
-  try {
-    const userId = req.userId;
-    const { location, address } = req.body;
-    const lat = location?.lat;
-    const lng = location?.lng;
-
-    if (!userId) return sendError(res, "Login required", 401);
-    if (!Number.isFinite(lat) || lat < -90 || lat > 90 || !Number.isFinite(lng) || lng < -180 || lng > 180) {
-      return sendError(res, "Valid latitude and longitude are required", 400);
-    }
-
-    const UserModel = (await import("../models/user.model.js")).default;
-    const user = await UserModel.findByIdAndUpdate(
-      userId,
-      {
-        goMarketLocation: {
-          type: "Point",
-          coordinates: [lng, lat],
-          address: String(address || `Location: ${lat.toFixed(6)}, ${lng.toFixed(6)}`),
-          updatedAt: new Date(),
-        },
-      },
-      { new: true, runValidators: true },
-    ).select("goMarketLocation");
-
-    if (!user) return sendError(res, "User not found", 404);
-    ok(res, { message: "Current location saved", data: { goMarketLocation: user.goMarketLocation } });
-  } catch (error) {
     sendError(res, error);
   }
 };
