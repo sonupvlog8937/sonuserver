@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import {addReview, approveWalletRequest, authWithGoogle, authWithPhoneController, changePasswordController, createSellerByAdminController, createWalletRequest, deleteMultiple, deleteUser, forgotPasswordController, getAllReviews, getAllUsers, getCommissionOverview, getReviews, getSellerStoreProfile, loginUserController, sendPhoneLoginOtpController, verifyPhoneLoginOtpController, completePhoneLoginController, sendRegisterPhoneOtpController, verifyRegisterPhoneOtpController, logoutController, refreshToken, registerUserController, removeImageFromCloudinary, resetpassword, resendOtpController, updateUserAccessByAdminController, updateUserDetails, upsertSellerStoreProfile, userAvatarController, userDetails, verifyEmailController, verifyForgotPasswordOtp, registerSellerController, deleteMyAccount, sendLoginOtpController, verifyLoginOtpController, sendRegisterOtpController, verifyRegisterOtpController} from '../controllers/user.controller.js';
+import {addReview, approveWalletRequest, authWithGoogle, authWithPhoneController, changePasswordController, createSellerByAdminController, createWalletRequest, deleteMultiple, deleteUser, forgotPasswordController, getAllReviews, getAllUsers, getCommissionOverview, getReviews, getSellerStoreProfile, loginUserController, sendPhoneLoginOtpController, verifyPhoneLoginOtpController, completePhoneLoginController, sendRegisterPhoneOtpController, verifyRegisterPhoneOtpController, logoutController, refreshToken, registerUserController, removeImageFromCloudinary, resetpassword, resendOtpController, updateUserAccessByAdminController, updateUserDetails, updateOwnPassword, upsertSellerStoreProfile, userAvatarController, userDetails, verifyEmailController, verifyForgotPasswordOtp, registerSellerController, deleteMyAccount, sendLoginOtpController, verifyLoginOtpController, sendRegisterOtpController, verifyRegisterOtpController} from '../controllers/user.controller.js';
 import {
   getQuickCommerceOutlet,
   updateQuickCommerceOutlet,
@@ -41,6 +41,7 @@ userRouter.get('/logout',auth,logoutController);
 userRouter.put('/user-avatar',auth,upload.single('avatar'),userAvatarController);
 userRouter.delete('/deteleImage',auth,removeImageFromCloudinary);
 userRouter.put('/:id',auth,updateUserDetails);
+userRouter.post('/profile/change-password',auth,updateOwnPassword);
 userRouter.post('/forgot-password',forgotPasswordController)
 userRouter.post('/verify-forgot-password-otp',verifyForgotPasswordOtp)
 userRouter.post('/reset-password',resetpassword)
