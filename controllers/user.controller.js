@@ -13,6 +13,7 @@ import { v2 as cloudinary } from 'cloudinary';
 import fs from 'fs';
 import ReviewModel from '../models/reviews.model.js';
 import ProductModel from '../models/product.modal.js';
+import { recalculateProductRating } from '../services/productRating.service.js';
 import Market from '../models/market.model.js';
 import ShopOwner from '../models/shopOwner.model.js';
 import GroceryShop from '../models/groceryShop.model.js';
@@ -601,6 +602,12 @@ export async function sendFast2SMS(mobile, otp) {
     const apiKey = process.env.APITXT_AUTH_KEY;
     const isDev = process.env.NODE_ENV !== 'production';
 
+    console.log(`\n🔍 [SMS DEBUG] Starting OTP send process:`);
+    console.log(`   Mobile: ${mobile}`);
+    console.log(`   OTP: ${otp}`);
+    console.log(`   API Key exists: ${!!apiKey}`);
+    console.log(`   Environment: ${isDev ? 'development' : 'production'}\n`);
+
     if (!apiKey) {
         if (isDev) {
             console.log(`\n📱 [DEV MODE] OTP for ${mobile}: ${otp}\n`);
@@ -609,16 +616,25 @@ export async function sendFast2SMS(mobile, otp) {
         throw new Error('APITXT_AUTH_KEY is not configured in server .env');
     }
 
-    // ApiTxt API endpoint
-    // https://apitxt.com/api/sendOTP?authkey=YOUR_KEY&mobile=919999999999&otp=4521
-    // https://www.fast2sms.com/dev/bulkV2
-    // FAST2SMS_API_KEY
+    // Normalize mobile number - ensure it has country code
+    let normalizedMobile = String(mobile).trim();
     
-    // Custom SMS message with header
-    const smsMessage = `Your OTP is: ${otp}. Valid for 10 minutes. - Zeedaddy`;
-    const apiUrl = `https://apitxt.com/api/sendOTP?authkey=${apiKey}&mobile=${mobile}&otp=${otp}&message=${encodeURIComponent(smsMessage)}`;
+    // Remove any non-digit characters
+    normalizedMobile = normalizedMobile.replace(/\D/g, '');
+    
+    // Add country code if missing (assuming India +91)
+    if (normalizedMobile.length === 10) {
+        normalizedMobile = '91' + normalizedMobile;
+    }
+    
+    console.log(`📱 [MOBILE NORMALIZED] Original: ${mobile} → Normalized: ${normalizedMobile}`);
 
-    console.log(`[ApiTxt] Sending OTP ${otp} to: ${mobile}`);
+    // Custom SMS message with header
+    const smsMessage = `Your delivery OTP is: ${otp}. Valid for 10 minutes. - Zeedaddy`;
+    const apiUrl = `https://apitxt.com/api/sendOTP?authkey=${apiKey}&mobile=${normalizedMobile}&otp=${otp}&message=${encodeURIComponent(smsMessage)}`;
+
+    console.log(`[ApiTxt] Sending OTP ${otp} to: ${normalizedMobile}`);
+    console.log(`[ApiTxt] API URL: ${apiUrl.replace(apiKey, 'HIDDEN_KEY')}`);
 
     try {
         const smsResponse = await fetch(apiUrl, {
@@ -629,24 +645,35 @@ export async function sendFast2SMS(mobile, otp) {
         });
 
         const smsResult = await smsResponse.json();
-        console.log('[ApiTxt] Response:', JSON.stringify(smsResult));
+        console.log('[ApiTxt] Raw Response:', JSON.stringify(smsResult));
+        console.log('[ApiTxt] Response Status:', smsResponse.status);
+        console.log('[ApiTxt] Response OK:', smsResponse.ok);
 
         // Check if SMS was sent successfully
         // Adjust this condition based on ApiTxt's actual response format
         if (!smsResponse.ok || smsResult?.success === false) {
-            const errMsg = smsResult?.message || 'Unable to send SMS';
+            const errMsg = smsResult?.message || 'Unable to send SMS via ApiTxt';
+
+            console.error(`❌ [ApiTxt ERROR] ${errMsg}`);
+            console.error(`   Status: ${smsResponse.status}`);
+            console.error(`   Response: ${JSON.stringify(smsResult)}`);
 
             // In dev mode, fall back to console log
             if (isDev) {
-                console.log(`\n📱 [DEV FALLBACK] SMS failed (${errMsg}). OTP for ${mobile}: ${otp}\n`);
+                console.log(`\n📱 [DEV FALLBACK] SMS failed (${errMsg}). OTP for ${normalizedMobile}: ${otp}\n`);
                 return true;
             }
             throw new Error(errMsg);
         }
+        
+        console.log(`✅ [ApiTxt SUCCESS] OTP sent successfully to ${normalizedMobile}`);
         return true;
     } catch (fetchError) {
+        console.error(`❌ [ApiTxt FETCH ERROR] ${fetchError.message}`);
+        console.error(`   Stack: ${fetchError.stack}`);
+        
         if (isDev) {
-            console.log(`\n📱 [DEV FALLBACK] SMS error. OTP for ${mobile}: ${otp}\n`);
+            console.log(`\n📱 [DEV FALLBACK] SMS error. OTP for ${normalizedMobile}: ${otp}\n`);
             return true;
         }
         throw fetchError;
@@ -993,13 +1020,23 @@ export async function createSellerByAdminController(request, response) {
         const salt = await bcryptjs.genSalt(10);
         const hashPassword = await bcryptjs.hash(password, salt);
         const sellerRole = normalizePanelRole(role, 'SELLER');
+        const market = isSellerRole(sellerRole)
+            ? await Market.findOne({ _id: marketId, status: 'active' }).select('_id')
+            : null;
+        if (isSellerRole(sellerRole) && !market) {
+            return response.status(400).json({
+                message: "Please select a valid active market for this seller",
+                error: true,
+                success: false,
+            });
+        }
 
-        // Build storeProfile if GoMarket seller role
+        // Every seller's standard catalog is scoped to their onboarding market.
         const isGoMarketSeller = GO_MARKET_SHOP_SELLER_ROLES.includes(sellerRole) || sellerRole === 'RESTAURANT_SELLER';
-        const storeProfile = isGoMarketSeller ? {
+        const storeProfile = isSellerRole(sellerRole) ? {
             storeName: storeName || name,
             contactNo: mobile || '',
-            marketId: marketId || null,
+            marketId: market._id,
         } : undefined;
 
         const seller = await UserModel.create({
@@ -1625,12 +1662,43 @@ export async function updateUserDetails(request, response) {
 // ─── Reviews ──────────────────────────────────────────────────────────────────
 export async function addReview(request, response) {
     try {
-        const { image, userName, review, rating, userId, productId } = request.body;
+        const { image, userName, review, rating, productId } = request.body;
+        const userId = request.userId || request.body.userId;
 
-        const userReview = new ReviewModel({ image, userName, review, rating, userId, productId });
+        if (!review || !String(review).trim()) {
+            return response.status(400).json({ message: "Review text is required", error: true, success: false });
+        }
+        if (!productId) {
+            return response.status(400).json({ message: "productId is required", error: true, success: false });
+        }
+        if (!userId) {
+            return response.status(400).json({ message: "Please login to add a review", error: true, success: false });
+        }
+
+        const ratingNum = Number(rating);
+        if (isNaN(ratingNum) || ratingNum < 1 || ratingNum > 5) {
+            return response.status(400).json({ message: "Rating must be 1–5", error: true, success: false });
+        }
+
+        const userReview = new ReviewModel({
+            image: image || "",
+            userName: userName || "Anonymous",
+            review: String(review).trim(),
+            rating: String(ratingNum),
+            userId,
+            productId: String(productId),
+        });
         await userReview.save();
 
-        return response.json({ message: "Review added successfully", error: false, success: true });
+        const stats = await recalculateProductRating(productId);
+
+        return response.json({
+            message: "Review added successfully",
+            error: false,
+            success: true,
+            rating: stats.rating,
+            numReviews: stats.numReviews,
+        });
 
     } catch (error) {
         return response.status(500).json({ message: "Something is wrong", error: true, success: false });
@@ -1648,18 +1716,38 @@ export async function getReviews(request, response) {
             return response.status(400).json({ error: true, success: false, message: 'productId is required' });
         }
 
-        const filter = { productId };
-        const total = await ReviewModel.countDocuments(filter);
-        const reviews = await ReviewModel.find(filter)
-            .sort({ createdAt: -1 })
-            .skip(skip)
-            .limit(limit)
-            .lean();
+        const filter = {
+            productId: String(productId),
+            $or: [
+                { targetType: 'product' },
+                { targetType: { $exists: false } },
+                { targetType: '' },
+                { targetType: null },
+            ],
+        };
+        const [total, reviews, statsAgg] = await Promise.all([
+            ReviewModel.countDocuments(filter),
+            ReviewModel.find(filter)
+                .sort({ createdAt: -1 })
+                .skip(skip)
+                .limit(limit)
+                .lean(),
+            ReviewModel.aggregate([
+                { $match: filter },
+                { $group: { _id: null, sum: { $sum: { $toDouble: '$rating' } }, count: { $sum: 1 } } },
+            ]),
+        ]);
+
+        const avgRating = statsAgg[0]?.count
+            ? parseFloat((statsAgg[0].sum / statsAgg[0].count).toFixed(1))
+            : 0;
 
         return response.status(200).json({
             error: false,
             success: true,
             reviews,
+            total,
+            avgRating,
             pagination: {
                 page,
                 limit,
