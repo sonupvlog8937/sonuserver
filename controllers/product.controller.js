@@ -2207,8 +2207,8 @@ export async function productSearchSuggestions(request, response) {
     .lean();
 
     // Use fuzzy matching to rank suggestions
-    const suggestions = rankSuggestions(query, products, {
-      limit: 8,
+    const rankedProducts = rankSuggestions(query, products, {
+      limit: products.length,
       getLabel: (p) => {
         // Combine all SEO fields for better fuzzy matching
         const searchFields = [
@@ -2225,16 +2225,20 @@ export async function productSearchSuggestions(request, response) {
         ].filter(Boolean).join(" ");
         return searchFields;
       },
-    }).map((p) => ({
-      _id: p._id,
-      name: p.name,
-      brand: p.brand,
-      category: p.catName || p.subCat,
-      image: p.image,
-      price: p.price,
-      discount: p.discount,
-      isSponsored: p.isSponsored || false,
-    }));
+    });
+    const suggestions = rankedProducts
+      .sort((a, b) => Number(Boolean(b.isSponsored)) - Number(Boolean(a.isSponsored)))
+      .slice(0, 8)
+      .map((p) => ({
+        _id: p._id,
+        name: p.name,
+        brand: p.brand,
+        category: p.catName || p.subCat,
+        image: p.image,
+        price: p.price,
+        discount: p.discount,
+        isSponsored: p.isSponsored || false,
+      }));
 
     return response.status(200).json({
       error: false,
