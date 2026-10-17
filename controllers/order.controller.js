@@ -471,6 +471,75 @@ export async function getOrderDetailsController(request, response) {
     }
 }
 
+export async function getOrderByIdController(request, response) {
+    try {
+        const { id } = request.params;
+        if (!/^[a-f\d]{24}$/i.test(String(id || ""))) {
+            return response.status(400).json({
+                message: "Invalid order id",
+                error: true,
+                success: false,
+            });
+        }
+
+        const role = request.currentUser?.role;
+        const isAdmin = ["ADMIN", "VICE_ADMIN"].includes(role);
+        const isSeller = [
+            "SELLER", "GROCERY_SELLER", "RESTAURANT_SELLER", "FASHION_SELLER",
+            "ELECTRONICS_SELLER", "MEDICAL_SELLER", "BEAUTY_SELLER",
+            "HOME_KITCHEN_SELLER", "GIFTS_TOYS_SELLER", "BOOKS_STATIONERY_SELLER",
+            "JEWELLERY_SELLER", "HARDWARE_SELLER", "AUTOMOBILE_SELLER",
+        ].includes(role);
+
+        const accessFilter = { _id: id };
+        if (isSeller) {
+            accessFilter["products.sellerId"] = request.userId;
+        } else if (role === "DELIVERY_RIDER") {
+            accessFilter["deliveryAssignment.riderId"] = request.userId;
+        } else if (!isAdmin) {
+            return response.status(403).json({
+                message: "Forbidden",
+                error: true,
+                success: false,
+            });
+        }
+
+        const order = await OrderModel.findOne(accessFilter)
+            .populate("delivery_address")
+            .populate({ path: "userId", select: "name email phone mobile goMarketLocation" })
+            .populate({ path: "deliveryAssignment.riderId", select: "name mobile email" })
+            .populate({ path: "products.sellerId", select: "name" })
+            .lean();
+
+        if (!order) {
+            return response.status(404).json({
+                message: "Order not found",
+                error: true,
+                success: false,
+            });
+        }
+
+        if (isSeller) {
+            order.products = (order.products || []).filter((product) =>
+                String(product.sellerId?._id || product.sellerId) === String(request.userId)
+            );
+        }
+
+        return response.json({
+            message: "Order details",
+            data: order,
+            error: false,
+            success: true,
+        });
+    } catch (error) {
+        return response.status(500).json({
+            message: error.message || error,
+            error: true,
+            success: false,
+        });
+    }
+}
+
 export async function getUserOrderDetailsController(request, response) {
     try {
         const userId = request.userId // order id
@@ -689,13 +758,26 @@ export const updateOrderStatusController = async (request, response) => {
 
         const normalizedStatus = normalizeOrderStatus(order_status);
 
-        const updateOrder = await OrderModel.findByIdAndUpdate(
-            id,
+        const statusUpdateFilter = { _id: id };
+        if (!["ADMIN", "VICE_ADMIN"].includes(request.currentUser?.role)) {
+            statusUpdateFilter["products.sellerId"] = request.userId;
+        }
+
+        const updateOrder = await OrderModel.findOneAndUpdate(
+            statusUpdateFilter,
             {
                 order_status: normalizedStatus,
             },
             { new: true }
         );
+
+        if (!updateOrder) {
+            return response.status(404).json({
+                message: "Order not found",
+                error: true,
+                success: false
+            });
+        }
 
         return response.json({
             message: "Update order status",
@@ -774,7 +856,11 @@ export const updateReturnRefundStatusController = async (request, response) => {
         const { id } = request.params;
         const { returnStatus, refundStatus, refundMethod, refundAmount } = request.body;
 
-        const order = await OrderModel.findById(id);
+        const orderFilter = { _id: id };
+        if (!["ADMIN", "VICE_ADMIN"].includes(request.currentUser?.role)) {
+            orderFilter["products.sellerId"] = request.userId;
+        }
+        const order = await OrderModel.findOne(orderFilter);
 
         if (!order) {
             return response.status(404).json({
@@ -1349,7 +1435,8 @@ const getSellerMarketIds = async (sellerId, sellerEmail = "") => {
 
 export const listDeliveryRidersController = async (request, response) => {
     try {
-        const marketIds = request.currentUser?.role === "ADMIN"
+        const isAdmin = ["ADMIN", "VICE_ADMIN"].includes(request.currentUser?.role);
+        const marketIds = isAdmin
             ? []
             : await getSellerMarketIds(request.userId, request.currentUser?.email);
         const filter = { role: "DELIVERY_RIDER", status: "Active" };
@@ -1367,8 +1454,9 @@ export const listDeliveryRidersController = async (request, response) => {
 
 export const broadcastOrderToMarketController = async (request, response) => {
     try {
+        const isAdmin = ["ADMIN", "VICE_ADMIN"].includes(request.currentUser?.role);
         const order = await OrderModel.findOne({ _id: request.params.id, "products.sellerId": request.userId });
-        if (!order && request.currentUser?.role !== "ADMIN") {
+        if (!order && !isAdmin) {
             return response.status(404).json({ success: false, error: true, message: "Seller order not found" });
         }
 
@@ -1380,7 +1468,7 @@ export const broadcastOrderToMarketController = async (request, response) => {
         }
 
         let marketIds;
-        if (request.currentUser?.role === "ADMIN") {
+        if (isAdmin) {
             // Admin: derive market from the order's product sellers
             const sellerIds = targetOrder.products.map(p => p.sellerId).filter(Boolean);
             const uniqueSellerIds = [...new Set(sellerIds.map(String))];
@@ -1407,7 +1495,7 @@ export const broadcastOrderToMarketController = async (request, response) => {
         const riderQuery = { role: "DELIVERY_RIDER", status: "Active" };
         if (marketIds.length) {
             riderQuery["riderProfile.marketId"] = { $in: marketIds };
-        } else if (request.currentUser?.role !== "ADMIN") {
+        } else if (!isAdmin) {
             return response.status(400).json({ success: false, error: true, message: "No active market found for this seller" });
         }
 
@@ -1438,11 +1526,12 @@ export const broadcastOrderToMarketController = async (request, response) => {
 
 export const assignOrderToRiderController = async (request, response) => {
     try {
+        const isAdmin = ["ADMIN", "VICE_ADMIN"].includes(request.currentUser?.role);
         const { riderId } = request.body || {};
         if (!riderId) return response.status(400).json({ success: false, error: true, message: "Select a delivery rider" });
 
         const order = await OrderModel.findOne({ _id: request.params.id, "products.sellerId": request.userId });
-        if (!order && request.currentUser?.role !== "ADMIN") {
+        if (!order && !isAdmin) {
             return response.status(404).json({ success: false, error: true, message: "Seller order not found" });
         }
         const targetOrder = order || await OrderModel.findById(request.params.id);
@@ -1451,7 +1540,7 @@ export const assignOrderToRiderController = async (request, response) => {
         const rider = await UserModel.findOne({ _id: riderId, role: "DELIVERY_RIDER", status: "Active" });
         if (!rider) return response.status(404).json({ success: false, error: true, message: "Delivery rider not found" });
 
-        if (request.currentUser?.role !== "ADMIN") {
+        if (!isAdmin) {
             const marketIds = await getSellerMarketIds(request.userId, request.currentUser?.email);
             const riderMarketId = rider.riderProfile?.marketId ? String(rider.riderProfile.marketId) : "";
             if (!riderMarketId || !marketIds.includes(riderMarketId)) {
