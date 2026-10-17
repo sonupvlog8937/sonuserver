@@ -1648,6 +1648,69 @@ export async function updateUserDetails(request, response) {
     }
 }
 
+export async function updateOwnPassword(request, response) {
+    try {
+        const { oldPassword, newPassword, confirmPassword } = request.body;
+        if (
+            typeof oldPassword !== "string" ||
+            typeof newPassword !== "string" ||
+            typeof confirmPassword !== "string" ||
+            !oldPassword ||
+            !newPassword ||
+            !confirmPassword
+        ) {
+            return response.status(400).json({
+                message: "Current password, new password, and confirmation are required.",
+                error: true, success: false
+            });
+        }
+        if (newPassword !== confirmPassword) {
+            return response.status(400).json({
+                message: "New password and confirmation do not match.",
+                error: true, success: false
+            });
+        }
+        if (newPassword.length < 6) {
+            return response.status(400).json({
+                message: "New password must be at least 6 characters.",
+                error: true, success: false
+            });
+        }
+
+        const user = await UserModel.findById(request.userId);
+        if (!user) {
+            return response.status(404).json({
+                message: "User account not found.",
+                error: true, success: false
+            });
+        }
+        const passwordMatches = user.password
+            ? await bcryptjs.compare(oldPassword, user.password)
+            : false;
+        if (!passwordMatches) {
+            return response.status(400).json({
+                message: "Current password is incorrect.",
+                error: true, success: false
+            });
+        }
+
+        const salt = await bcryptjs.genSalt(10);
+        user.password = await bcryptjs.hash(newPassword, salt);
+        user.signUpWithGoogle = false;
+        await user.save();
+
+        return response.status(200).json({
+            message: "Password changed successfully.",
+            error: false, success: true
+        });
+    } catch (error) {
+        return response.status(500).json({
+            message: error.message || error,
+            error: true, success: false
+        });
+    }
+}
+
 
 // ─── Reviews ──────────────────────────────────────────────────────────────────
 export async function addReview(request, response) {
