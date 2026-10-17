@@ -448,6 +448,13 @@ export async function createProduct(request, response) {
         discountPrice: Number(request.body.oldPrice || request.body.discountPrice || 0),
         stock: Number(request.body.countInStock || 0),
         description: request.body.description || "",
+        isFeatured: Boolean(request.body.isFeatured),
+        keywords: request.body.keywords || "",
+        tags: request.body.tags || "",
+        searchKeywords: request.body.searchKeywords || "",
+        seoDescription: request.body.seoDescription || "",
+        attributes: request.body.attributes || "",
+        productType: request.body.productType || "",
       });
       await bumpGroceryShopProductCount(shop._id, 1);
       imagesArr = [];
@@ -486,6 +493,16 @@ export async function createProduct(request, response) {
         discountPrice: Number(request.body.oldPrice || request.body.discountPrice || 0),
         description: request.body.description || "",
         foodType: request.body.foodType || "",
+        isAvailable: request.body.isAvailable !== undefined
+          ? Boolean(request.body.isAvailable)
+          : true,
+        isFeatured: Boolean(request.body.isFeatured),
+        keywords: request.body.keywords || "",
+        tags: request.body.tags || "",
+        searchKeywords: request.body.searchKeywords || "",
+        seoDescription: request.body.seoDescription || "",
+        attributes: request.body.attributes || "",
+        productType: request.body.productType || "",
       });
       imagesArr = [];
 
@@ -1487,8 +1504,30 @@ export async function getProduct(request, response) {
     const product = await ProductModel.findById(id)
       .populate("category")
       .lean(); // ✅ KEY FIX
-
+    
     if (!product) {
+      const groceryProduct = await GroceryProduct.findById(id)
+        .populate("categoryId subCategoryId")
+        .lean();
+      if (groceryProduct) {
+        return response.status(200).json({
+          error: false,
+          success: true,
+          product: mapGroceryProductToAdminProduct(groceryProduct),
+        });
+      }
+
+      const restaurantItem = await RestaurantItem.findById(id)
+        .populate("categoryId subCategoryId")
+        .lean();
+      if (restaurantItem) {
+        return response.status(200).json({
+          error: false,
+          success: true,
+          product: mapRestaurantItemToAdminProduct(restaurantItem),
+        });
+      }
+
       return response.status(404).json({ message: "The product is not found", error: true, success: false });
     }
 
@@ -1540,6 +1579,19 @@ export async function updateProduct(request, response) {
             : owned.product.specifications,
             productOptions: request.body.productOptions !== undefined ? request.body.productOptions : owned.product.productOptions,
           description: request.body.description,
+            isFeatured: request.body.isFeatured !== undefined
+              ? Boolean(request.body.isFeatured)
+              : owned.product.isFeatured,
+            keywords: request.body.keywords !== undefined ? request.body.keywords : owned.product.keywords,
+            tags: request.body.tags !== undefined ? request.body.tags : owned.product.tags,
+            searchKeywords: request.body.searchKeywords !== undefined
+              ? request.body.searchKeywords
+              : owned.product.searchKeywords,
+            seoDescription: request.body.seoDescription !== undefined
+              ? request.body.seoDescription
+              : owned.product.seoDescription,
+            attributes: request.body.attributes !== undefined ? request.body.attributes : owned.product.attributes,
+            productType: request.body.productType !== undefined ? request.body.productType : owned.product.productType,
           image: imageUrl || owned.product.image,
           images: incomingImages.length ? incomingImages : (owned.product.images || (owned.product.image ? [owned.product.image] : [])),
           categoryId: request.body.goMarketCategoryId || request.body.categoryId || owned.product.categoryId,
@@ -1579,6 +1631,19 @@ export async function updateProduct(request, response) {
             : owned.item.specifications,
             productOptions: request.body.productOptions !== undefined ? request.body.productOptions : owned.item.productOptions,
           description: request.body.description,
+          isFeatured: request.body.isFeatured !== undefined
+            ? Boolean(request.body.isFeatured)
+            : owned.item.isFeatured,
+          keywords: request.body.keywords !== undefined ? request.body.keywords : owned.item.keywords,
+          tags: request.body.tags !== undefined ? request.body.tags : owned.item.tags,
+          searchKeywords: request.body.searchKeywords !== undefined
+            ? request.body.searchKeywords
+            : owned.item.searchKeywords,
+          seoDescription: request.body.seoDescription !== undefined
+            ? request.body.seoDescription
+            : owned.item.seoDescription,
+          attributes: request.body.attributes !== undefined ? request.body.attributes : owned.item.attributes,
+          productType: request.body.productType !== undefined ? request.body.productType : owned.item.productType,
           image: imageUrl || owned.item.image,
           images: incomingImages.length ? incomingImages : (owned.item.images || (owned.item.image ? [owned.item.image] : [])),
           categoryId: request.body.goMarketCategoryId || request.body.categoryId || owned.item.categoryId,
