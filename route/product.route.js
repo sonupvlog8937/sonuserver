@@ -18,6 +18,7 @@ import {
   getAllProductsBanners, filters, sortBy, searchProductController,
   productSearchSuggestions,
   getSellerProducts, getProductsBySellerPublic, getSellerDashboardStats,
+  updateSponsoredProductStatus,
 } from '../controllers/product.controller.js';
 import {
   patchGroceryStock,
@@ -82,6 +83,7 @@ productRouter.get('/seller/dashboard-stats', auth, authorizeRole(...ANY_SELLER_R
 productRouter.patch('/seller/grocery-stock/:id', auth, authorizeRole(...GO_MARKET_SHOP_SELLERS), patchGroceryStock);
 productRouter.patch('/seller/item-availability/:id', auth, authorizeRole('RESTAURANT_SELLER'), patchRestaurantAvailability);
 productRouter.get('/store/:sellerId',        getProductsBySellerPublic);
+productRouter.patch('/sponsored/:id', auth, authorizeRole('ADMIN'), updateSponsoredProductStatus);
 
 // ─── REVIEW ROUTES ────────────────────────────────────────────────────────────
 productRouter.post('/reviews/add',       auth,                        addReview);
