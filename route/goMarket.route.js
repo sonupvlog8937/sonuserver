@@ -18,7 +18,6 @@ import {
   searchMarkets,
   updateResource,
   setPreferredMarket,
-  saveCurrentLocation,
   debugMarkets,
   addTestCoordinatesToMarkets,
 } from "../controllers/goMarket.controller.js";
@@ -116,7 +115,6 @@ router.post("/unfollow-shop", auth, unfollowShop);
 router.post("/follow-restaurant", auth, followRestaurant);
 router.post("/unfollow-restaurant", auth, unfollowRestaurant);
 router.post("/set-preferred-market", auth, setPreferredMarket);
-router.post("/save-location", auth, saveCurrentLocation);
 
 // ─── Seller GoMarket Shop Profile ─────────────────────────────────────────
 const sellerOwnerFilter = async (req) => {
