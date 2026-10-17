@@ -1,7 +1,7 @@
 import { Router } from "express";
 import auth from "../middlewares/auth.js";
 import authorizeRole from "../middlewares/authorizeRole.js";
-import {  captureOrderPaypalController, createOrderController, createOrderPaypalController, deleteOrder, getOrderDetailsController, getTotalOrdersCountController, getUserOrderDetailsController, totalSalesController, totalUsersController, updateOrderStatusController, getSellerOrdersController, getSellerDashboardStats, requestOrderReturnController, updateReturnRefundStatusController, listDeliveryRidersController, assignOrderToRiderController, broadcastOrderToMarketController, getRiderOrdersController, getRiderStatsController, getRiderRecentDeliveriesController, confirmRiderOrderController, sendDeliveryOtpController, deliverRiderOrderController, payRiderWalletController, calculateGoMarketDistanceController, cancelUserOrderController } from "../controllers/order.controller.js";
+import {  captureOrderPaypalController, createOrderController, createOrderPaypalController, deleteOrder, getOrderByIdController, getOrderDetailsController, getTotalOrdersCountController, getUserOrderDetailsController, totalSalesController, totalUsersController, updateOrderStatusController, getSellerOrdersController, getSellerDashboardStats, requestOrderReturnController, updateReturnRefundStatusController, listDeliveryRidersController, assignOrderToRiderController, broadcastOrderToMarketController, getRiderOrdersController, getRiderStatsController, getRiderRecentDeliveriesController, confirmRiderOrderController, sendDeliveryOtpController, deliverRiderOrderController, payRiderWalletController, calculateGoMarketDistanceController, cancelUserOrderController } from "../controllers/order.controller.js";
 const orderRouter = Router();
 
 const GO_MARKET_SHOP_SELLERS = [
@@ -16,6 +16,7 @@ const QUICK_COMMERCE_SELLERS = [...GO_MARKET_SHOP_SELLERS, 'RESTAURANT_SELLER'];
 orderRouter.post('/create',auth,createOrderController)
 orderRouter.post('/go-market-distance',auth,calculateGoMarketDistanceController)
 orderRouter.get("/order-list",auth,authorizeRole('ADMIN','VICE_ADMIN'),getOrderDetailsController)
+orderRouter.get('/details/:id',auth,getOrderByIdController)
 orderRouter.get('/create-order-paypal',auth,createOrderPaypalController)
 orderRouter.post('/capture-order-paypal',auth,captureOrderPaypalController)
 orderRouter.put('/order-status/:id',auth,authorizeRole('ADMIN','VICE_ADMIN',...ALL_SELLER_ROLES),updateOrderStatusController)
