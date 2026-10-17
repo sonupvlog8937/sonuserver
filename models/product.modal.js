@@ -16,7 +16,6 @@ const productSchema = mongoose.Schema(
     thirdsubCatId: { type: String, default: "" },
     category: { type: mongoose.Schema.Types.ObjectId, ref: "Category" },
     seller:   { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
-    marketIds: [{ type: mongoose.Schema.Types.ObjectId, ref: "Market", index: true }],
     countInStock: { type: Number, required: true },
     rating:       { type: Number, default: 0 },
     numReviews:   { type: Number, default: 0 },
@@ -88,7 +87,6 @@ productSchema.index({ discount: -1 });
 // --- Compound indexes (filter + sort saath hona) ---
 productSchema.index({ seller: 1, createdAt: -1 });   // seller dashboard
 productSchema.index({ seller: 1, catId: 1 });         // seller store filter
-productSchema.index({ marketIds: 1, createdAt: -1 });
 productSchema.index({ catId: 1, createdAt: -1 });     // cat listing page
 productSchema.index({ subCatId: 1, createdAt: -1 });
 productSchema.index({ thirdsubCatId: 1, createdAt: -1 });
