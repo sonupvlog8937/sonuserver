@@ -107,6 +107,7 @@ const mapProduct = (item, query, terms) => {
     countInStock: item.countInStock || 0,
     sale: item.sale || 0,
     isFeatured: item.isFeatured || false,
+    isSponsored: item.isSponsored || false,
     source: "product",
     score,
   };
@@ -193,19 +194,21 @@ const applyProductFilters = (items, filters = {}) => {
 
 const sortProducts = (items, sortBy = "relevance") => {
   const sorted = [...items];
+  const sponsoredFirst = (a, b) =>
+    Number(Boolean(b.isSponsored)) - Number(Boolean(a.isSponsored));
   switch (sortBy) {
     case "priceAsc":
-      return sorted.sort((a, b) => Number(a.price) - Number(b.price));
+      return sorted.sort((a, b) => sponsoredFirst(a, b) || Number(a.price) - Number(b.price));
     case "priceDesc":
-      return sorted.sort((a, b) => Number(b.price) - Number(a.price));
+      return sorted.sort((a, b) => sponsoredFirst(a, b) || Number(b.price) - Number(a.price));
     case "rating":
-      return sorted.sort((a, b) => Number(b.rating || 0) - Number(a.rating || 0));
+      return sorted.sort((a, b) => sponsoredFirst(a, b) || Number(b.rating || 0) - Number(a.rating || 0));
     case "popular":
-      return sorted.sort((a, b) => Number(b.sale || b.soldCount || 0) - Number(a.sale || a.soldCount || 0));
+      return sorted.sort((a, b) => sponsoredFirst(a, b) || Number(b.sale || b.soldCount || 0) - Number(a.sale || a.soldCount || 0));
     case "latest":
-      return sorted.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+      return sorted.sort((a, b) => sponsoredFirst(a, b) || new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
     default:
-      return sorted.sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
+      return sorted.sort((a, b) => sponsoredFirst(a, b) || Number(b.score || 0) - Number(a.score || 0));
   }
 };
 
@@ -250,7 +253,7 @@ export const executeSearch = async ({
   if (scope === "all" || scope === "products") {
     searchPromises.push(
       Object.keys(productQuery).length
-        ? ProductModel.find(productQuery).lean().limit(300)
+        ? ProductModel.find(productQuery).sort({ isSponsored: -1 }).lean().limit(300)
         : Promise.resolve([]),
     );
   } else {
@@ -510,7 +513,8 @@ export const executeSuggestions = async ({ query = "", limit = 10, scope = "all"
       searchPromises.push(
         Object.keys(productQuery).length
           ? ProductModel.find(productQuery)
-              .select("name brand images price discount catName subCat rating sale isFeatured title searchKeywords")
+              .select("name brand images price discount catName subCat rating sale isFeatured isSponsored title searchKeywords")
+              .sort({ isSponsored: -1 })
               .limit(30)
               .lean()
           : []
@@ -569,7 +573,10 @@ export const executeSuggestions = async ({ query = "", limit = 10, scope = "all"
       ...groceryProducts.map((g) => mapGroceryProduct(g, cleanQuery, terms, shopMap)),
       ...restaurantItems.map((r) => mapRestaurantItem(r, cleanQuery, terms, restaurantMap)),
     ]
-      .sort((a, b) => b.score - a.score)
+      .sort((a, b) =>
+        Number(Boolean(b.isSponsored)) - Number(Boolean(a.isSponsored)) ||
+        Number(b.score || 0) - Number(a.score || 0),
+      )
       .slice(0, limit);
 
     const expandedSynonyms = await expandSynonyms(cleanQuery);
