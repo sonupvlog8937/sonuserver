@@ -1020,23 +1020,13 @@ export async function createSellerByAdminController(request, response) {
         const salt = await bcryptjs.genSalt(10);
         const hashPassword = await bcryptjs.hash(password, salt);
         const sellerRole = normalizePanelRole(role, 'SELLER');
-        const market = isSellerRole(sellerRole)
-            ? await Market.findOne({ _id: marketId, status: 'active' }).select('_id')
-            : null;
-        if (isSellerRole(sellerRole) && !market) {
-            return response.status(400).json({
-                message: "Please select a valid active market for this seller",
-                error: true,
-                success: false,
-            });
-        }
 
-        // Every seller's standard catalog is scoped to their onboarding market.
+        // Build storeProfile if GoMarket seller role
         const isGoMarketSeller = GO_MARKET_SHOP_SELLER_ROLES.includes(sellerRole) || sellerRole === 'RESTAURANT_SELLER';
-        const storeProfile = isSellerRole(sellerRole) ? {
+        const storeProfile = isGoMarketSeller ? {
             storeName: storeName || name,
             contactNo: mobile || '',
-            marketId: market._id,
+            marketId: marketId || null,
         } : undefined;
 
         const seller = await UserModel.create({
