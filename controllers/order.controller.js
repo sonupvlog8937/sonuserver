@@ -17,8 +17,9 @@ import AppSettings from "../models/appSettings.model.js";
 import { haversineKm, resolveCoordPair, formatDistanceKm } from "../utils/geoCoords.js";
 import { sendFast2SMS } from "./user.controller.js";
 import { normalizeOrderStatus } from "../utils/orderStatus.js";
-import { SELLER_COMMISSION_RATE, SELLER_COMMISSION_RATE_PERCENT } from "../utils/commission.js";
 
+const SELLER_COMMISSION_RATE_PERCENT = 20;
+const SELLER_COMMISSION_RATE = SELLER_COMMISSION_RATE_PERCENT / 100;
 
 const isRazorpaySignaturePayload = (body = {}) =>
     Boolean(body.razorpay_order_id || body.razorpay_signature);

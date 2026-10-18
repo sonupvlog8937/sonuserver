@@ -1,11 +1,12 @@
 import UserModel from '../models/user.model.js'
-import { SELLER_COMMISSION_RATE_PERCENT } from '../utils/commission.js'
 import bcryptjs from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import sendEmailFun from '../config/sendEmail.js';
 import VerificationEmail from '../utils/verifyEmailTemplate.js';
 import generatedAccessToken from '../utils/generatedAccessToken.js';
 import generatedRefreshToken from '../utils/generatedRefreshToken.js';
+
+const SELLER_COMMISSION_RATE_PERCENT = 20;
 import AddressModel from '../models/address.model.js';
 import CartProductModel from '../models/cartProduct.modal.js';
 import MyListModel from '../models/myList.modal.js';
