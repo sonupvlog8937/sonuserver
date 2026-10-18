@@ -47,11 +47,23 @@ const auth = async(request,response,next)=>{
         next()
 
     } catch (error) {
+        if (
+            error?.name === 'TokenExpiredError' ||
+            error?.name === 'JsonWebTokenError' ||
+            error?.name === 'NotBeforeError'
+        ) {
+            return response.status(401).json({
+                message: 'Access token is invalid or expired',
+                error: true,
+                success: false,
+            });
+        }
+
         return response.status(500).json({
-            message : "You have not login",///error.message || error,
-            error : true,
-            success : false
-        })
+            message: "Authentication could not be completed",
+            error: true,
+            success: false
+        });
     }
 }
 
