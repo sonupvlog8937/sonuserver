@@ -254,10 +254,13 @@ const countSellerGoMarketProducts = async (sellerId) => {
     return groceryCount + restaurantItemCount;
 };
 
-const applySellerCommission = async (products = []) => {
+const applySellerCommission = async (order) => {
+    if (!order?._id) return;
+    if (order.sellerCommissionCredited) return;
+
     const commissionBySeller = new Map();
 
-    for (const item of products) {
+    for (const item of order.products || []) {
         const sellerId = item?.sellerId ? String(item.sellerId) : null;
         if (!sellerId) continue;
         const subTotal = Number(item?.subTotal || (Number(item?.price || 0) * Number(item?.quantity || 1)));
@@ -266,7 +269,10 @@ const applySellerCommission = async (products = []) => {
     }
 
     for (const [sellerId, commissionAmount] of commissionBySeller.entries()) {
-        await UserModel.findByIdAndUpdate(sellerId, {
+        await UserModel.findOneAndUpdate({
+            _id: sellerId,
+            "walletTransactions.referenceId": { $ne: String(order._id) },
+        }, {
             $inc: {
                 "wallet.pendingCommission": commissionAmount,
                 "wallet.totalCommissionPaid": commissionAmount,
@@ -276,11 +282,17 @@ const applySellerCommission = async (products = []) => {
                     type: "COMMISSION",
                     amount: commissionAmount,
                     status: "APPROVED",
-                    note: `${SELLER_COMMISSION_RATE_PERCENT}% commission charged for completed order`,
+                    note: `${SELLER_COMMISSION_RATE_PERCENT}% commission charged for delivered order ${order._id}`,
+                    referenceId: String(order._id),
                 },
             },
         });
     }
+
+    await OrderModel.updateOne(
+        { _id: order._id },
+        { $set: { sellerCommissionCredited: true } }
+    );
 };
 
 export const createOrderController = async (request, response) => {
@@ -402,7 +414,6 @@ export const createOrderController = async (request, response) => {
 
         await updateProductsInventory(productsWithSeller);
         await updateGoMarketSales(productsWithSeller);
-        await applySellerCommission(productsWithSeller);
 
         void queueOrderConfirmationEmail(request.body.userId, order);
 
@@ -719,7 +730,6 @@ export const captureOrderPaypalController = async (request, response) => {
 
         await updateProductsInventory(productsWithSeller);
         await updateGoMarketSales(productsWithSeller);
-        await applySellerCommission(productsWithSeller);
 
         void queueOrderConfirmationEmail(request.body.userId, order);
 
@@ -778,6 +788,10 @@ export const updateOrderStatusController = async (request, response) => {
                 error: true,
                 success: false
             });
+        }
+
+        if (normalizedStatus === "delivered") {
+            await applySellerCommission(updateOrder);
         }
 
         return response.json({
@@ -2027,6 +2041,7 @@ export const deliverRiderOrderController = async (request, response) => {
             console.log(`✅ Wallet updated! New balance: ₹${updatedUser?.wallet?.availableBalance || 0}`);
         }
         await order.save();
+        await applySellerCommission(order);
 
         // Fetch updated rider data to return in response
         const riderData = await UserModel.findById(request.userId).select('wallet riderProfile');
