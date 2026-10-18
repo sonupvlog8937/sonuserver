@@ -83,6 +83,10 @@ const orderSchema = new mongoose.Schema(
       type: String,
       default: "pending",
     },
+    sellerCommissionCredited: {
+      type: Boolean,
+      default: false,
+    },
     delivery_address: {
       type: mongoose.Schema.ObjectId,
       ref: "address",
