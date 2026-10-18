@@ -2003,12 +2003,16 @@ export async function getCommissionOverview(request, response) {
         }
 
         const allTransactions = (user.walletTransactions || []).slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        const transactionType = String(request.query.type || '').trim().toUpperCase();
+        const matchingTransactions = transactionType
+            ? allTransactions.filter((transaction) => transaction.type === transactionType)
+            : allTransactions;
         const page = Math.max(Number.parseInt(request.query.page, 10) || 1, 1);
         const limit = Math.min(Math.max(Number.parseInt(request.query.limit, 10) || 20, 1), 100);
         const isPaginated = request.query.page !== undefined || request.query.limit !== undefined;
         const transactions = isPaginated
-            ? allTransactions.slice((page - 1) * limit, page * limit)
-            : allTransactions;
+            ? matchingTransactions.slice((page - 1) * limit, page * limit)
+            : matchingTransactions;
         const pendingAmount = allTransactions
             .filter((transaction) => transaction.status === "PENDING")
             .reduce((total, transaction) => total + (Number(transaction.amount) || 0), 0);
@@ -2024,8 +2028,8 @@ export async function getCommissionOverview(request, response) {
                 transactionPagination: {
                     page,
                     limit,
-                    total: allTransactions.length,
-                    totalPages: Math.ceil(allTransactions.length / limit),
+                    total: matchingTransactions.length,
+                    totalPages: Math.ceil(matchingTransactions.length / limit),
                 },
             } : {}),
         });
