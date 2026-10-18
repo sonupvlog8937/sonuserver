@@ -155,6 +155,7 @@ const userSchema = mongoose.Schema({
                 default: "PENDING"
             },
             note: { type: String, default: "" },
+            referenceId: { type: String, default: "" },
             createdBy: { type: mongoose.Schema.ObjectId, ref: 'User', default: null },
             approvedBy: { type: mongoose.Schema.ObjectId, ref: 'User', default: null },
             createdAt: { type: Date, default: Date.now }
