@@ -1426,24 +1426,36 @@ export async function refreshToken(request, response) {
             });
         }
 
-        const verifyToken = await jwt.verify(refreshToken, process.env.SECRET_KEY_REFRESH_TOKEN);
-        if (!verifyToken) {
+        let verifyToken;
+        try {
+            verifyToken = jwt.verify(refreshToken, process.env.SECRET_KEY_REFRESH_TOKEN);
+        } catch {
             return response.status(401).json({
                 message: "Token is expired",
                 error: true, success: false
             });
         }
 
-        const userId       = verifyToken?._id;
+        const userId = verifyToken?.id;
+        const user = await UserModel.findById(userId).select('refresh_token status').lean();
+        if (!user || user.status !== 'Active' || user.refresh_token !== refreshToken) {
+            return response.status(401).json({
+                message: "Refresh token is no longer valid",
+                error: true, success: false
+            });
+        }
+
         const newAccessToken = await generatedAccessToken(userId);
+        const newRefreshToken = await generatedRefreshToken(userId);
 
         const cookiesOption = { httpOnly: true, secure: true, sameSite: "None" };
         response.cookie('accessToken', newAccessToken, cookiesOption);
+        response.cookie('refreshToken', newRefreshToken, cookiesOption);
 
         return response.json({
             message: "New Access token generated",
             error: false, success: true,
-            data: { accessToken: newAccessToken }
+            data: { accessToken: newAccessToken, refreshToken: newRefreshToken }
         });
 
     } catch (error) {
@@ -2000,6 +2012,59 @@ export async function getCommissionOverview(request, response) {
         });
     } catch (error) {
         return response.status(500).json({ message: error.message || error, error: true, success: false });
+    }
+}
+
+export async function getWalletSellersController(request, response) {
+    try {
+        const page = Math.max(Number.parseInt(request.query.page, 10) || 1, 1);
+        const limit = Math.min(Math.max(Number.parseInt(request.query.limit, 10) || 50, 1), 100);
+        const filter = { role: { $in: SELLER_ROLES } };
+
+        if (request.query.status === 'PENDING') {
+            filter.walletTransactions = { $elemMatch: { status: 'PENDING' } };
+        }
+
+        const [users, total] = await Promise.all([
+            UserModel.find(filter)
+                .select('name email role storeProfile.storeName wallet walletTransactions')
+                .sort({ updatedAt: -1 })
+                .skip((page - 1) * limit)
+                .limit(limit)
+                .lean(),
+            UserModel.countDocuments(filter),
+        ]);
+
+        const sellers = users.map((user) => ({
+            _id: user._id,
+            name: user.name,
+            email: user.email,
+            role: user.role,
+            storeName: user.storeProfile?.storeName || '',
+            wallet: user.wallet,
+            transactions: (user.walletTransactions || []).map((transaction) => ({
+                _id: transaction._id,
+                type: transaction.type,
+                amount: transaction.amount,
+                status: transaction.status,
+                note: transaction.note,
+                createdAt: transaction.createdAt,
+                referenceId: transaction.referenceId,
+            })),
+        }));
+
+        return response.status(200).json({
+            error: false,
+            success: true,
+            sellers,
+            pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+        });
+    } catch (error) {
+        return response.status(500).json({
+            error: true,
+            success: false,
+            message: error.message || 'Could not load seller wallets.',
+        });
     }
 }
 
