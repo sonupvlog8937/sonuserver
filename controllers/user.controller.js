@@ -1,4 +1,5 @@
 import UserModel from '../models/user.model.js'
+import { SELLER_COMMISSION_RATE_PERCENT } from '../utils/commission.js'
 import bcryptjs from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import sendEmailFun from '../config/sendEmail.js';
@@ -2001,14 +2002,32 @@ export async function getCommissionOverview(request, response) {
             return response.status(404).json({ error: true, success: false, message: "User not found" });
         }
 
-        const transactions = (user.walletTransactions || []).slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        const allTransactions = (user.walletTransactions || []).slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        const page = Math.max(Number.parseInt(request.query.page, 10) || 1, 1);
+        const limit = Math.min(Math.max(Number.parseInt(request.query.limit, 10) || 20, 1), 100);
+        const isPaginated = request.query.page !== undefined || request.query.limit !== undefined;
+        const transactions = isPaginated
+            ? allTransactions.slice((page - 1) * limit, page * limit)
+            : allTransactions;
+        const pendingAmount = allTransactions
+            .filter((transaction) => transaction.status === "PENDING")
+            .reduce((total, transaction) => total + (Number(transaction.amount) || 0), 0);
         return response.status(200).json({
             error: false,
             success: true,
             role: user.role,
             wallet: user.wallet,
-            commissionRate: 10,
-            transactions
+            commissionRate: SELLER_COMMISSION_RATE_PERCENT,
+            summary: { transactionCount: allTransactions.length, pendingAmount },
+            transactions,
+            ...(isPaginated ? {
+                transactionPagination: {
+                    page,
+                    limit,
+                    total: allTransactions.length,
+                    totalPages: Math.ceil(allTransactions.length / limit),
+                },
+            } : {}),
         });
     } catch (error) {
         return response.status(500).json({ message: error.message || error, error: true, success: false });
