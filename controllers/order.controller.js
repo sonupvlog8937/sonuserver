@@ -490,6 +490,92 @@ export async function getOrderDetailsController(request, response) {
             orderlist = await orderQuery;
         }
 
+        if (analyticsOnly) {
+            const productIds = [...new Set(orderlist.flatMap((order) =>
+                (order.products || []).map((item) => String(item?.productId || ""))
+                    .filter((id) => /^[a-f\d]{24}$/i.test(id))
+            ))];
+            if (productIds.length > 0) {
+                const [marketProducts, groceryProducts, restaurantItems] = await Promise.all([
+                    ProductModel.find({ _id: { $in: productIds } })
+                        .select("_id seller")
+                        .populate({ path: "seller", select: "name storeProfile.storeName" })
+                        .lean(),
+                    GroceryProduct.find({ _id: { $in: productIds } })
+                        .select("_id shopId")
+                        .populate({
+                            path: "shopId",
+                            select: "shopName ownerId",
+                            populate: { path: "ownerId", select: "userId" },
+                        })
+                        .lean(),
+                    RestaurantItem.find({ _id: { $in: productIds } })
+                        .select("_id restaurantId")
+                        .populate({
+                            path: "restaurantId",
+                            select: "restaurantName ownerId",
+                            populate: { path: "ownerId", select: "userId" },
+                        })
+                        .lean(),
+                ]);
+                const catalogByProductId = new Map();
+                marketProducts.forEach((product) => {
+                    const seller = product.seller;
+                    if (!seller?._id) return;
+                    const productId = String(product._id);
+                    const mappings = catalogByProductId.get(productId) || [];
+                    mappings.push({
+                        shopId: String(seller._id),
+                        shopName: seller.storeProfile?.storeName || seller.name || "",
+                        sellerId: String(seller._id),
+                    });
+                    catalogByProductId.set(productId, mappings);
+                });
+                [...groceryProducts, ...restaurantItems].forEach((product) => {
+                    const productId = String(product._id);
+                    const relatedShop = product.shopId || product.restaurantId;
+                    if (!relatedShop?._id) return;
+                    const mappings = catalogByProductId.get(productId) || [];
+                    mappings.push({
+                        shopId: String(relatedShop._id),
+                        shopName: relatedShop.shopName || relatedShop.restaurantName || "",
+                        sellerId: relatedShop.ownerId?.userId ? String(relatedShop.ownerId.userId) : "",
+                    });
+                    catalogByProductId.set(productId, mappings);
+                });
+
+                orderlist = orderlist.map((order) => ({
+                    ...order,
+                    products: (order.products || []).map((item) => {
+                        const candidates = catalogByProductId.get(String(item?.productId || "")) || [];
+                        const sellerId = String(item?.sellerId || "");
+                        const explicitShopId = String(item?.shopId?._id || item?.shopId || item?.restaurantId?._id || item?.restaurantId || "");
+                        const explicitMatches = explicitShopId
+                            ? candidates.filter((candidate) => candidate.shopId === explicitShopId)
+                            : [];
+                        const sellerMatches = sellerId
+                            ? candidates.filter((candidate) => candidate.sellerId === sellerId)
+                            : [];
+                        const mapping = explicitMatches.length === 1
+                            ? explicitMatches[0]
+                            : sellerMatches.length === 1
+                                ? sellerMatches[0]
+                                : candidates.length === 1
+                                    ? candidates[0]
+                                    : null;
+                        if (!mapping) return item;
+                        return {
+                            ...item,
+                            shopId: item.shopId || mapping.shopId,
+                            shopName: item.shopName || mapping.shopName,
+                            analyticsShopId: mapping.shopId,
+                            analyticsShopName: mapping.shopName,
+                        };
+                    }),
+                }));
+            }
+        }
+
         const total = page && limit ? await OrderModel.countDocuments(query) : orderlist.length;
 
         return response.json({
