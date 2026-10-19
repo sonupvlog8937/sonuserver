@@ -439,32 +439,58 @@ export const createOrderController = async (request, response) => {
 
 export async function getOrderDetailsController(request, response) {
     try {
-        const userId = request.userId // order id
-
-        const { page, limit } = request.query;
+        const { page, limit, startAt, endAt, analytics } = request.query;
+        const analyticsOnly = analytics === "true";
+        const query = {};
+        if (startAt || endAt) {
+            const start = new Date(startAt);
+            const end = new Date(endAt);
+            if (!startAt || !endAt || !Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || start >= end) {
+                return response.status(400).json({
+                    message: "A valid startAt and endAt date range is required",
+                    error: true,
+                    success: false
+                });
+            }
+            query.createdAt = { $gte: start, $lt: end };
+        }
 
         let orderlist;
         if (page && limit) {
-            // Paginated query
-            orderlist = await OrderModel.find()
-                .sort({ createdAt: -1 })
-                .populate('delivery_address')
-                .populate({ path: 'userId', select: 'name email phone goMarketLocation' })
-                .populate('deliveryAssignment.riderId')
-                .populate('products.sellerId')
+            let orderQuery = OrderModel.find(query).sort({ createdAt: -1 });
+            if (analyticsOnly) {
+                orderQuery = orderQuery
+                    .select('_id userId products.productId products.productTitle products.quantity products.price products.subTotal products.sellerId paymentId payment_status order_status totalAmt shippingFee deliveryFee discount_amount goMarketData.orderType refund createdAt')
+                    .populate({ path: 'userId', select: 'name' })
+                    .lean();
+            } else {
+                orderQuery = orderQuery
+                    .populate('delivery_address')
+                    .populate({ path: 'userId', select: 'name email phone goMarketLocation' })
+                    .populate('deliveryAssignment.riderId')
+                    .populate('products.sellerId');
+            }
+            orderlist = await orderQuery
                 .skip((page - 1) * limit)
                 .limit(parseInt(limit));
         } else {
-            // Fetch all orders (no pagination)
-            orderlist = await OrderModel.find()
-                .sort({ createdAt: -1 })
-                .populate('delivery_address')
-                .populate({ path: 'userId', select: 'name email phone goMarketLocation' })
-                .populate('deliveryAssignment.riderId')
-                .populate('products.sellerId');
+            let orderQuery = OrderModel.find(query).sort({ createdAt: -1 });
+            if (analyticsOnly) {
+                orderQuery = orderQuery
+                    .select('_id userId products.productId products.productTitle products.quantity products.price products.subTotal products.sellerId paymentId payment_status order_status totalAmt shippingFee deliveryFee discount_amount goMarketData.orderType refund createdAt')
+                    .populate({ path: 'userId', select: 'name' })
+                    .lean();
+            } else {
+                orderQuery = orderQuery
+                    .populate('delivery_address')
+                    .populate({ path: 'userId', select: 'name email phone goMarketLocation' })
+                    .populate('deliveryAssignment.riderId')
+                    .populate('products.sellerId');
+            }
+            orderlist = await orderQuery;
         }
 
-        const total = page && limit ? await OrderModel.countDocuments() : orderlist.length;
+        const total = page && limit ? await OrderModel.countDocuments(query) : orderlist.length;
 
         return response.json({
             message: "order list",
