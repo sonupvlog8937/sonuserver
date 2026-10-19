@@ -199,6 +199,8 @@ const orderSchema = new mongoose.Schema(
   },
 );
 
+orderSchema.index({ createdAt: -1 });
+
 const OrderModel = mongoose.model("order", orderSchema);
 
 export default OrderModel;
