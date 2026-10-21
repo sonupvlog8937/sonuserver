@@ -589,6 +589,10 @@ const itemSort = (query) => {
 
 export const listShopProductsCatalog = async (req, res) => {
   try {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, private");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+
     const { shopId } = req.params;
     if (!isObjectId(shopId)) return sendError(res, "Invalid shop id", 400);
 
